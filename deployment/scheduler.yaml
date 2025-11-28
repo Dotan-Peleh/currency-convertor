@@ -1,0 +1,17 @@
+# Cloud Scheduler job configuration for Currency Conversion System
+# This file can be used as a reference or imported using:
+# gcloud scheduler jobs create http currency-conversion-daily --config-file=scheduler.yaml
+
+name: currency-conversion-daily
+schedule: "0 0 * * *"  # Daily at 00:00 UTC
+timeZone: "UTC"
+httpTarget:
+  uri: "https://REGION-PROJECT_ID.cloudfunctions.net/currency-conversion"
+  httpMethod: GET
+retryConfig:
+  retryCount: 3
+  maxRetryDuration: 600s
+  minBackoffDuration: 5s
+  maxBackoffDuration: 3600s
+  maxDoublings: 5
+
