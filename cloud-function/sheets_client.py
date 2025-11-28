@@ -42,7 +42,12 @@ class SheetsClient:
                     scopes=['https://www.googleapis.com/auth/spreadsheets']
                 )
             else:
-                raise ValueError("Google credentials not found. Set GOOGLE_APPLICATION_CREDENTIALS")
+                # Try Application Default Credentials (for Cloud Functions)
+                try:
+                    from google.auth import default
+                    creds, _ = default(scopes=['https://www.googleapis.com/auth/spreadsheets'])
+                except Exception as e:
+                    raise ValueError(f"Google credentials not found. Set GOOGLE_APPLICATION_CREDENTIALS or use Application Default Credentials. Error: {e}")
         
         self.service = build('sheets', 'v4', credentials=creds)
         self.sheets = self.service.spreadsheets()
