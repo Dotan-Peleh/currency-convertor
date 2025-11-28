@@ -142,6 +142,17 @@ gcloud functions call currency-conversion --gen2 --region=us-central1
 
 **Total: $0/month** (within free tiers)
 
+## Documentation
+
+Complete documentation is available in the `docs/` directory:
+
+- **[COMPLETE_SYSTEM_DOCUMENTATION.md](docs/COMPLETE_SYSTEM_DOCUMENTATION.md)** - Full system logic, formulas, and examples
+- **[API_LIMITS_AND_LOGIC.md](docs/API_LIMITS_AND_LOGIC.md)** - API limits, costs, and update frequency
+- **[SETUP.md](docs/SETUP.md)** - Step-by-step setup instructions
+- **[GOOGLE_SHEETS_TEMPLATE.md](docs/GOOGLE_SHEETS_TEMPLATE.md)** - Google Sheets structure guide
+- **[API_KEYS.md](docs/API_KEYS.md)** - Credentials setup guide
+- **[QUICK_START.md](QUICK_START.md)** - Quick start guide
+
 ## Support
 
 For issues or questions:
