@@ -55,20 +55,37 @@ for i, row in enumerate(values):
         updated_rows.append(['Date', 'Currency', 'Country', 'Rate', 'Source'])
         continue
     
-    # Ensure row has 5 columns
-    while len(row) < 5:
-        row.append('')
-    
+    # Handle old format (4 columns) vs new format (5 columns)
     date = row[0] if len(row) > 0 else ''
     currency = row[1] if len(row) > 1 else ''
-    country = row[2] if len(row) > 2 else ''
-    rate = row[3] if len(row) > 3 else ''
-    source = row[4] if len(row) > 4 else ''
     
-    # If Country is empty, fill it
-    if not country and currency:
+    # Check if this is old format (no Country column)
+    # Old format: [Date, Currency, Rate, Source]
+    # New format: [Date, Currency, Country, Rate, Source]
+    if len(row) == 4:
+        # Old format - need to insert Country
+        rate = row[2] if len(row) > 2 else ''
+        source = row[3] if len(row) > 3 else ''
         country = currency_countries.get_country_for_currency(currency)
         updated_count += 1
+    elif len(row) == 5:
+        # New format - Country might be empty
+        country = row[2] if len(row) > 2 else ''
+        rate = row[3] if len(row) > 3 else ''
+        source = row[4] if len(row) > 4 else ''
+        
+        # If Country is empty, fill it
+        if not country and currency:
+            country = currency_countries.get_country_for_currency(currency)
+            updated_count += 1
+    else:
+        # Unexpected format - try to parse
+        country = row[2] if len(row) > 2 and row[2] else ''
+        if not country and currency:
+            country = currency_countries.get_country_for_currency(currency)
+            updated_count += 1
+        rate = row[3] if len(row) > 3 else ''
+        source = row[4] if len(row) > 4 else ''
     
     updated_rows.append([date, currency, country, rate, source])
 
