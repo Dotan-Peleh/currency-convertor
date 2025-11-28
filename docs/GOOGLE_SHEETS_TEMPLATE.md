@@ -66,9 +66,10 @@ com.peerplay.mergecruise.credits200000	com.peerplay.mergecruise.credits200000	19
 
 **Columns** (Row 1 is header):
 - `Date` (Column A) - Date in YYYY-MM-DD format
-- `Currency` (Column B) - Currency code
-- `Rate` (Column C) - Exchange rate from USD to currency
-- `Source` (Column D) - Source of the rate (e.g., "exchangerate-api.com")
+- `Currency` (Column B) - Currency code (e.g., "USD", "EUR", "GBP")
+- `Country` (Column C) - Country name associated with the currency
+- `Rate` (Column D) - Exchange rate from USD to currency
+- `Source` (Column E) - Source of the rate (e.g., "exchangerate-api.com")
 
 **Notes**:
 - New rates are appended daily (not overwritten)
@@ -83,7 +84,7 @@ com.peerplay.mergecruise.credits200000	com.peerplay.mergecruise.credits200000	19
 4. Add your SKU data starting from row 2
 5. Create two additional sheets: "Price Matrix" and "Exchange Rates Log"
 6. Add headers to "Price Matrix" sheet (see columns above)
-7. Add headers to "Exchange Rates Log" sheet (see columns above)
+7. Add headers to "Exchange Rates Log" sheet: `Date`, `Currency`, `Country`, `Rate`, `Source`
 8. Share the sheet with your Google Service Account email (see API_KEYS.md)
 9. Copy the Sheet ID from the URL (the long string between `/d/` and `/edit`)
 10. Set the `GOOGLE_SHEETS_ID` environment variable in your Cloud Function

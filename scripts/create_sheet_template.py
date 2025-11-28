@@ -99,7 +99,7 @@ def create_exchange_rates_headers(filename="exchange_rates_headers.csv"):
     """Create headers for Exchange Rates Log sheet"""
     with open(filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['Date', 'Currency', 'Rate', 'Source'])
+        writer.writerow(['Date', 'Currency', 'Country', 'Rate', 'Source'])
     print(f"✓ Created {filename}")
     print(f"  Import this into the 'Exchange Rates Log' sheet in your Google Sheet")
 

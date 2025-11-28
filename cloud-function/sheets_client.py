@@ -180,13 +180,14 @@ class SheetsClient:
         try:
             sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
             
-            # Prepare data rows
+            # Prepare data rows with country names
             rows = []
             for currency, rate in sorted(rates.items()):
-                rows.append([date, currency, rate, 'exchangerate-api.com'])
+                country = currency_countries.get_country_for_currency(currency)
+                rows.append([date, currency, country, rate, 'exchangerate-api.com'])
             
             # Append to sheet
-            range_name = f"{sheet_name}!A:D"
+            range_name = f"{sheet_name}!A:E"
             body = {
                 'values': rows
             }
