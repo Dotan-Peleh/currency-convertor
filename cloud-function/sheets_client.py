@@ -120,6 +120,15 @@ class SheetsClient:
             # Prepare data rows
             rows = [headers]
             for row_data in price_data:
+                # Format Net_vs_Apple as text to preserve percentage format
+                net_vs_apple = row_data.get('Net_vs_Apple', '')
+                # If it's already a string with %, keep it; otherwise format it
+                if isinstance(net_vs_apple, (int, float)):
+                    if net_vs_apple > 0:
+                        net_vs_apple = f"+{net_vs_apple:.1f}%"
+                    else:
+                        net_vs_apple = f"{net_vs_apple:.1f}%"
+                
                 rows.append([
                     row_data.get('Country', ''),
                     row_data.get('Country_Name', ''),
@@ -133,7 +142,7 @@ class SheetsClient:
                     row_data.get('Gross_USD', 0),
                     row_data.get('Stash_Fee_USD', 0),
                     row_data.get('Net_USD', 0),  # What I will be left with
-                    row_data.get('Net_vs_Apple', '')
+                    net_vs_apple  # Format as text to preserve percentage
                 ])
             
             # Clear existing data and write new data
