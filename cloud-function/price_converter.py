@@ -9,6 +9,7 @@ import exchange_rates
 import tier_snapper
 import tax_calculator
 import sheets_client
+import country_names
 import config
 
 logger = logging.getLogger(__name__)
@@ -110,17 +111,30 @@ class PriceConverter:
             net_vs_apple = ((net_usd - apple_net) / apple_net * 100) if apple_net > 0 else 0
             net_vs_apple_str = f"+{net_vs_apple:.1f}%" if net_vs_apple > 0 else f"{net_vs_apple:.1f}%"
             
+            # Get country name
+            country_name = country_names.get_country_name(country_code)
+            
+            # What user will pay (final price including VAT if applicable)
+            # For VAT-inclusive countries, local_price already includes VAT
+            # For VAT-exclusive countries, local_price is before tax, but user pays local_price + tax
+            if tax_calculator.is_vat_inclusive(country_code):
+                user_pays = local_price  # Price already includes VAT
+            else:
+                user_pays = local_price + vat_amount  # Price + tax
+            
             return {
                 'Country': country_code,
+                'Country_Name': country_name,
                 'Currency': currency,
                 'AppleStoreSku': sku['AppleStoreSku'],
                 'GooglePlaySku': sku['GooglePlaySku'],
                 'Local_Price': round(local_price, 2),
+                'User_Pays': round(user_pays, 2),  # What user will pay (final price)
                 'VAT_Rate': round(vat_rate * 100, 1),  # As percentage
                 'VAT_Amount': round(vat_amount, 2),
                 'Gross_USD': round(gross_usd, 2),
                 'Stash_Fee_USD': round(stash_fee_usd, 2),
-                'Net_USD': round(net_usd, 2),
+                'Net_USD': round(net_usd, 2),  # What I will be left with
                 'Net_vs_Apple': net_vs_apple_str
             }
             

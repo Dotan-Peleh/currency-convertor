@@ -112,8 +112,9 @@ class SheetsClient:
             
             # Prepare headers
             headers = [
-                'Country', 'Currency', 'AppleStoreSku', 'GooglePlaySku', 'Local_Price',
-                'VAT_Rate', 'VAT_Amount', 'Gross_USD', 'Stash_Fee_USD', 'Net_USD', 'Net_vs_Apple'
+                'Country', 'Country_Name', 'Currency', 'AppleStoreSku', 'GooglePlaySku', 
+                'Local_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
+                'Gross_USD', 'Stash_Fee_USD', 'Net_USD', 'Net_vs_Apple'
             ]
             
             # Prepare data rows
@@ -121,15 +122,17 @@ class SheetsClient:
             for row_data in price_data:
                 rows.append([
                     row_data.get('Country', ''),
+                    row_data.get('Country_Name', ''),
                     row_data.get('Currency', ''),
                     row_data.get('AppleStoreSku', ''),
                     row_data.get('GooglePlaySku', ''),
                     row_data.get('Local_Price', 0),
+                    row_data.get('User_Pays', 0),  # What user will pay
                     row_data.get('VAT_Rate', 0),
                     row_data.get('VAT_Amount', 0),
                     row_data.get('Gross_USD', 0),
                     row_data.get('Stash_Fee_USD', 0),
-                    row_data.get('Net_USD', 0),
+                    row_data.get('Net_USD', 0),  # What I will be left with
                     row_data.get('Net_vs_Apple', '')
                 ])
             
