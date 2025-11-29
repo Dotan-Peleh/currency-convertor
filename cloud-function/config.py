@@ -7,7 +7,8 @@ STASH_FEE_PERCENT = 0.0  # 0% for first year
 STASH_FIXED_FEE = 0.0  # No fixed fee
 
 # Tier snapping configuration
-TIER_SNAPPING_MODE = "nearest"  # Options: "nearest", "up", "down"
+# "up" ensures visibility price is always higher than raw price (looks better to users)
+TIER_SNAPPING_MODE = "up"  # Options: "nearest", "up", "down"
 
 # Exchange Rate API configuration
 EXCHANGE_RATE_API_BASE_URL = "https://api.exchangerate-api.com/v4/latest/USD"

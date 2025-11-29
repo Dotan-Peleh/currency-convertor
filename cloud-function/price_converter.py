@@ -79,13 +79,30 @@ class PriceConverter:
         try:
             usd_price = float(sku['Cost'])
             
-            # Step 1: Convert USD to local currency (raw conversion)
+            # Step 1: Convert USD to local currency (raw conversion using daily exchange rate)
             local_price_raw = self.exchange_client.convert_usd_to_currency(
                 usd_price, currency, exchange_rates_dict
             )
             
-            # Step 2: Snap to nearest tier (this is what user sees in app stores)
-            visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency)
+            # Step 2: Snap to tier with "up" mode (always rounds up to nice number)
+            # This ensures visibility price is always higher than raw price (looks better)
+            visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency, mode="up")
+            
+            # Ensure visibility price is always >= local_price_raw (safety check)
+            if visibility_price < local_price_raw:
+                # This shouldn't happen with "up" mode, but just in case
+                logger.warning(
+                    f"Visibility price {visibility_price} < raw price {local_price_raw} for {currency}. "
+                    f"Adjusting to next tier."
+                )
+                # Find next tier above raw price
+                tiers = tier_snapper.get_tiers_for_currency(currency)
+                for tier in tiers:
+                    if tier >= local_price_raw:
+                        visibility_price = tier
+                        break
+                if visibility_price < local_price_raw:
+                    visibility_price = tiers[-1]  # Use highest tier as fallback
             
             # Step 3: Calculate tax (based on visibility price - what user actually pays)
             vat_rate = tax_calculator.get_tax_rate(country_code)
