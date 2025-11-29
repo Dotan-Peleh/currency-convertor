@@ -239,7 +239,7 @@ class SheetsClient:
     def log_exchange_rates(self, rates: Dict[str, float], date: str):
         """
         Log exchange rates to the Exchange Rates Log sheet.
-        If rates for this date already exist, they will be overwritten.
+        Always writes to the fixed range A1:E1661, replacing all data with the latest date and rates.
         
         Args:
             rates: Dictionary mapping currency codes to rates
@@ -248,56 +248,34 @@ class SheetsClient:
         try:
             sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
             
-            # Read all existing data
-            range_name = f"{sheet_name}!A:E"
-            result = self.sheets.values().get(
-                spreadsheetId=self.sheets_id,
-                range=range_name
-            ).execute()
+            # Prepare header row
+            header = ['Date', 'Currency', 'Country', 'Rate', 'Source']
             
-            values = result.get('values', [])
-            
-            # Keep header row and filter out rows with matching date
-            if len(values) > 0:
-                header = values[0]
-                # Filter out rows where the date matches
-                filtered_rows = [header] + [
-                    row for row in values[1:] 
-                    if not (row and len(row) > 0 and row[0] == date)
-                ]
-            else:
-                # No data yet, create header
-                header = ['Date', 'Currency', 'Country', 'Rate', 'Source']
-                filtered_rows = [header]
-            
-            # Prepare new data rows with country names
-            new_rows = []
+            # Prepare data rows with country names - all with the same date
+            rows = [header]
             for currency, rate in sorted(rates.items()):
                 country = currency_countries.get_country_for_currency(currency)
-                new_rows.append([date, currency, country, rate, 'exchangerate-api.com'])
+                rows.append([date, currency, country, rate, 'exchangerate-api.com'])
             
-            # Combine filtered rows with new rows
-            all_rows = filtered_rows + new_rows
-            
-            # Clear the sheet and write all data
+            # Clear the fixed range A1:E1661 first
             self.sheets.values().clear(
                 spreadsheetId=self.sheets_id,
-                range=f"{sheet_name}!A:Z"
+                range=f"{sheet_name}!A1:E1661"
             ).execute()
             
-            # Write all rows back
+            # Write all data to the fixed range A1:E1661
             body = {
-                'values': all_rows
+                'values': rows
             }
             
             self.sheets.values().update(
                 spreadsheetId=self.sheets_id,
-                range=f"{sheet_name}!A1",
+                range=f"{sheet_name}!A1:E1661",
                 valueInputOption='USER_ENTERED',
                 body=body
             ).execute()
             
-            logger.info(f"Logged {len(rates)} exchange rates for {date} (overwrote existing if any)")
+            logger.info(f"Updated exchange rates in range A1:E1661 with {len(rates)} rates for date {date}")
             
         except HttpError as e:
             logger.error(f"Error logging exchange rates: {e}")
