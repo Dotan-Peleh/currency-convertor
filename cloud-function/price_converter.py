@@ -158,8 +158,8 @@ class PriceConverter:
             logger.warning("No SKUs found in config sheet")
             return []
         
-        # Fetch exchange rates
-        exchange_rates_dict = self.exchange_client.fetch_rates()
+        # Fetch exchange rates (extract rates dict, ignore date)
+        exchange_rates_dict, _ = self.exchange_client.fetch_rates()
         
         # Process each SKU for each country
         price_data = []

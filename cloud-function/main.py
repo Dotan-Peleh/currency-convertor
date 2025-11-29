@@ -79,10 +79,9 @@ def currency_conversion_handler(request):
         # Write to Google Sheets
         sheets.write_price_matrix(price_data)
         
-        # Log exchange rates
-        exchange_rates_dict = exchange_client.fetch_rates()
-        today = datetime.utcnow().strftime('%Y-%m-%d')
-        sheets.log_exchange_rates(exchange_rates_dict, today)
+        # Log exchange rates - use the date from the API response
+        exchange_rates_dict, api_date = exchange_client.fetch_rates()
+        sheets.log_exchange_rates(exchange_rates_dict, api_date)
         
         logger.info(f"Successfully processed {len(price_data)} price combinations")
         
@@ -91,7 +90,7 @@ def currency_conversion_handler(request):
             'body': json.dumps({
                 'message': 'Currency conversion completed successfully',
                 'count': len(price_data),
-                'date': today
+                'date': api_date
             })
         }
         

@@ -4,8 +4,8 @@ Exchange rate API client for fetching currency conversion rates.
 
 import requests
 import logging
-from typing import Dict, Optional
-from datetime import datetime
+from typing import Dict, Optional, Tuple
+from datetime import datetime, timedelta
 import config
 
 logger = logging.getLogger(__name__)
@@ -26,12 +26,14 @@ class ExchangeRateClient:
         self.cache: Dict[str, Dict] = {}
         self.last_fetch_date: Optional[str] = None
         
-    def fetch_rates(self) -> Dict[str, float]:
+    def fetch_rates(self) -> Tuple[Dict[str, float], str]:
         """
         Fetch current exchange rates from USD to all currencies.
         
         Returns:
-            Dictionary mapping currency codes to exchange rates (USD to currency)
+            Tuple of (rates dictionary, date string)
+            - rates: Dictionary mapping currency codes to exchange rates (USD to currency)
+            - date: Date string (YYYY-MM-DD) from the API response
             
         Raises:
             requests.RequestException: If API request fails
@@ -48,16 +50,56 @@ class ExchangeRateClient:
             data = response.json()
             rates = data.get('rates', {})
             
+            # Extract date from API response - this is the actual date of the rates
+            api_date = data.get('date')
+            if not api_date:
+                # Fallback to today if API doesn't provide date
+                api_date = datetime.utcnow().strftime('%Y-%m-%d')
+                logger.warning("API response did not include date field, using current UTC date")
+            else:
+                # Ensure date is in YYYY-MM-DD format
+                if isinstance(api_date, str):
+                    api_date = api_date[:10]  # Take first 10 characters (YYYY-MM-DD)
+            
+            # Validate that the API date is today (or warn if not)
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            try:
+                api_date_obj = datetime.strptime(api_date, '%Y-%m-%d')
+                today_obj = datetime.strptime(today, '%Y-%m-%d')
+                days_diff = (today_obj - api_date_obj).days
+                
+                if days_diff < 0:
+                    logger.error(
+                        f"API returned future date {api_date} (today is {today}). "
+                        f"This should never happen - there may be a timezone or API issue."
+                    )
+                elif days_diff == 0:
+                    logger.info(f"API returned rates for today ({api_date})")
+                elif days_diff == 1:
+                    logger.warning(
+                        f"API returned rates for yesterday ({api_date}, today is {today}). "
+                        f"Rates may be stale. The API may not have updated yet for today."
+                    )
+                else:
+                    logger.error(
+                        f"API returned rates for {days_diff} days ago ({api_date}, today is {today}). "
+                        f"Rates are significantly stale and should not be used!"
+                    )
+            except ValueError as e:
+                logger.error(f"Failed to parse API date '{api_date}': {e}")
+                # Use today as fallback
+                api_date = today
+                logger.warning(f"Using today's date ({today}) as fallback")
+            
             # Add USD to USD rate (1.0)
             rates['USD'] = 1.0
             
-            # Cache the rates
-            today = datetime.utcnow().strftime('%Y-%m-%d')
-            self.cache[today] = rates
-            self.last_fetch_date = today
+            # Cache the rates with the API date
+            self.cache[api_date] = rates
+            self.last_fetch_date = api_date
             
-            logger.info(f"Fetched {len(rates)} exchange rates")
-            return rates
+            logger.info(f"Fetched {len(rates)} exchange rates for date {api_date}")
+            return rates, api_date
             
         except requests.RequestException as e:
             logger.error(f"Failed to fetch exchange rates: {e}")
@@ -65,7 +107,7 @@ class ExchangeRateClient:
             if self.cache:
                 latest_date = max(self.cache.keys())
                 logger.warning(f"Using cached rates from {latest_date}")
-                return self.cache[latest_date]
+                return self.cache[latest_date], latest_date
             raise
     
     def get_rate(self, currency: str, rates: Optional[Dict[str, float]] = None) -> float:
@@ -80,7 +122,7 @@ class ExchangeRateClient:
             Exchange rate from USD to the specified currency
         """
         if rates is None:
-            rates = self.fetch_rates()
+            rates, _ = self.fetch_rates()
             
         currency = currency.upper()
         rate = rates.get(currency)
@@ -98,11 +140,14 @@ class ExchangeRateClient:
         Args:
             usd_amount: Amount in USD
             currency: Target currency code
-            rates: Optional pre-fetched rates dictionary
+            rates: Optional pre-fetched rates dictionary (ignores date from tuple)
             
         Returns:
             Amount in target currency
         """
+        # Handle tuple return from fetch_rates
+        if rates is not None and isinstance(rates, tuple):
+            rates = rates[0]
         rate = self.get_rate(currency, rates)
         return usd_amount * rate
     
@@ -113,11 +158,14 @@ class ExchangeRateClient:
         Args:
             amount: Amount in target currency
             currency: Source currency code
-            rates: Optional pre-fetched rates dictionary
+            rates: Optional pre-fetched rates dictionary (ignores date from tuple)
             
         Returns:
             Amount in USD
         """
+        # Handle tuple return from fetch_rates
+        if rates is not None and isinstance(rates, tuple):
+            rates = rates[0]
         rate = self.get_rate(currency, rates)
         if rate == 0:
             return 0.0
