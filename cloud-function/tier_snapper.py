@@ -126,10 +126,72 @@ def get_tiers_for_currency(currency: str, reference_price: Optional[float] = Non
     return TIER_DEFINITIONS['USD']
 
 
+def make_nice_number(price: float, max_increase: float = 2.0) -> float:
+    """
+    Create a nice-looking number that's slightly higher than the price.
+    Rounds up by at most max_increase units to make it look good.
+    
+    Args:
+        price: Raw price
+        max_increase: Maximum amount to increase (in same units as price)
+        
+    Returns:
+        Nice number slightly higher than price (within max_increase)
+    """
+    if price <= 0:
+        return price
+    
+    # Always start with just adding a small amount, then make it "nice"
+    base_increase = min(max_increase, price * 0.001)  # At most 0.1% or max_increase, whichever is smaller
+    nice = price + base_increase
+    
+    # Now make it a "nice" number based on magnitude
+    if price < 1:
+        # Sub-unit: round to 2 decimal places
+        nice = math.ceil(nice * 100) / 100
+    elif price < 10:
+        # Single digits: round to nearest integer or .99
+        nice = math.ceil(nice)
+        # If we can make it .99 without exceeding max_increase, do it
+        if nice - price <= max_increase and nice - int(nice) < 0.5:
+            nice = int(nice) + 0.99
+    elif price < 100:
+        # Tens: round to nearest integer or .99
+        nice = math.ceil(nice)
+        # If we can make it .99 without exceeding max_increase, do it
+        if nice - price <= max_increase:
+            nice = int(nice) + 0.99
+    elif price < 1000:
+        # Hundreds: round to nearest 10 or 5
+        nice = math.ceil(nice / 5) * 5
+    elif price < 10000:
+        # Thousands: round to nearest 10 or 50
+        nice = math.ceil(nice / 10) * 10
+    elif price < 100000:
+        # Tens of thousands: round to nearest 100
+        nice = math.ceil(nice / 100) * 100
+    else:
+        # Hundreds of thousands+: round to nearest 1000
+        nice = math.ceil(nice / 1000) * 1000
+    
+    # Final check: ensure we don't exceed max_increase
+    if nice - price > max_increase:
+        # Just add max_increase and round to reasonable precision
+        nice = price + max_increase
+        if price < 1:
+            nice = round(nice, 2)
+        elif price < 100:
+            nice = round(nice, 0)
+        else:
+            nice = round(nice, 0)
+    
+    return round(nice, 2)
+
+
 def snap_to_tier(price: float, currency: str, mode: Optional[str] = None) -> float:
     """
     Snap a price to the appropriate tier for the given currency.
-    For visibility prices, always rounds UP to ensure it's higher than raw price.
+    For visibility prices, rounds up slightly (1-2 units max) to ensure it's higher than raw price.
     
     Args:
         price: Raw price to snap
@@ -137,7 +199,7 @@ def snap_to_tier(price: float, currency: str, mode: Optional[str] = None) -> flo
         mode: Snapping mode ("nearest", "up", "down"). Defaults to config setting.
         
     Returns:
-        Snapped price (always >= input price when mode is "up")
+        Snapped price (always >= input price when mode is "up", but only slightly higher)
     """
     if price <= 0:
         return price
@@ -146,7 +208,38 @@ def snap_to_tier(price: float, currency: str, mode: Optional[str] = None) -> flo
     # Get tiers, using price as reference if currency not predefined
     tiers = get_tiers_for_currency(currency, reference_price=price)
     
-    # Find the appropriate tier
+    # For "up" mode, we want to round up but only slightly (1-2 units max)
+    if mode == "up":
+        # Determine max acceptable increase: always 1-2 units max, regardless of currency
+        # Use percentage-based for very large numbers to keep it reasonable
+        if price < 1:
+            max_increase = 0.02  # 2 cents max
+        elif price < 10:
+            max_increase = 1.0  # 1 unit max
+        elif price < 100:
+            max_increase = 2.0  # 2 units max
+        elif price < 1000:
+            max_increase = 2.0  # Still 2 units max for hundreds
+        elif price < 10000:
+            max_increase = 2.0  # Still 2 units max for thousands
+        else:
+            # For very large numbers, use 0.01% or 2 units, whichever is smaller
+            max_increase = min(2.0, price * 0.0001)
+        
+        # Find the next tier above price
+        for tier in tiers:
+            if tier >= price:
+                increase = tier - price
+                # If tier is close enough (within max_increase), use it
+                if increase <= max_increase:
+                    return tier
+                # Otherwise, create a nice number just slightly above
+                break
+        
+        # Create a nice number just slightly above (within max_increase)
+        return make_nice_number(price, max_increase)
+    
+    # Find the appropriate tier for other modes
     if price <= tiers[0]:
         return tiers[0]
     
@@ -163,30 +256,18 @@ def snap_to_tier(price: float, currency: str, mode: Optional[str] = None) -> flo
             upper_tier = tiers[i + 1]
             break
         elif price == tiers[i]:
-            # If price exactly matches a tier, use that tier (don't round up)
             return tiers[i]
         elif price == tiers[i + 1]:
-            # If price exactly matches upper tier, use that tier
             return tiers[i + 1]
     
     if lower_tier is None or upper_tier is None:
-        # Fallback: find closest tier, but if mode is "up", round up
-        if mode == "up":
-            # Find the first tier that's >= price
-            for tier in tiers:
-                if tier >= price:
-                    return tier
-            return tiers[-1]
-        else:
-            closest_tier = min(tiers, key=lambda x: abs(x - price))
-            logger.warning(f"Could not find tier range for {price} {currency}, using closest: {closest_tier}")
-            return closest_tier
+        # Fallback: find closest tier
+        closest_tier = min(tiers, key=lambda x: abs(x - price))
+        logger.warning(f"Could not find tier range for {price} {currency}, using closest: {closest_tier}")
+        return closest_tier
     
     # Apply snapping mode
-    if mode == "up":
-        # Always round up to ensure visibility price is higher
-        return upper_tier
-    elif mode == "down":
+    if mode == "down":
         return lower_tier
     else:  # nearest
         # Snap to the closer tier
