@@ -114,7 +114,7 @@ class SheetsClient:
             # Prepare headers
             headers = [
                 'Country', 'Country_Name', 'Currency', 'AppleStoreSku', 'GooglePlaySku', 
-                'Local_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
+                'Local_Price', 'Visibility_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
                 'Gross_USD', 'Stash_Fee_USD', 'Net_USD', 'Net_vs_Apple'
             ]
             
@@ -136,8 +136,9 @@ class SheetsClient:
                     row_data.get('Currency', ''),
                     row_data.get('AppleStoreSku', ''),
                     row_data.get('GooglePlaySku', ''),
-                    row_data.get('Local_Price', 0),
-                    row_data.get('User_Pays', 0),  # What user will pay
+                    row_data.get('Local_Price', 0),  # Raw conversion: USD * exchange_rate
+                    row_data.get('Visibility_Price', 0),  # Snapped tier price (what user sees)
+                    row_data.get('User_Pays', 0),  # What user will pay (including VAT)
                     row_data.get('VAT_Rate', 0),
                     row_data.get('VAT_Amount', 0),
                     row_data.get('Gross_USD', 0),

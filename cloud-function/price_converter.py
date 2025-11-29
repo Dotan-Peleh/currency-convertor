@@ -79,25 +79,25 @@ class PriceConverter:
         try:
             usd_price = float(sku['Cost'])
             
-            # Step 1: Convert USD to local currency
+            # Step 1: Convert USD to local currency (raw conversion)
             local_price_raw = self.exchange_client.convert_usd_to_currency(
                 usd_price, currency, exchange_rates_dict
             )
             
-            # Step 2: Snap to nearest tier
-            local_price = tier_snapper.snap_to_tier(local_price_raw, currency)
+            # Step 2: Snap to nearest tier (this is what user sees in app stores)
+            visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency)
             
-            # Step 3: Calculate tax
+            # Step 3: Calculate tax (based on visibility price - what user actually pays)
             vat_rate = tax_calculator.get_tax_rate(country_code)
-            vat_amount, net_before_fees = tax_calculator.calculate_tax(local_price, country_code)
+            vat_amount, net_before_fees = tax_calculator.calculate_tax(visibility_price, country_code)
             
             # Step 4: Calculate Stash fees
             stash_fee_local = self.calculate_stash_fees(net_before_fees)
             net_revenue_local = net_before_fees - stash_fee_local
             
-            # Step 5: Convert net revenue back to USD
+            # Step 5: Convert net revenue back to USD (based on visibility price - what user pays)
             gross_usd = self.exchange_client.convert_currency_to_usd(
-                local_price, currency, exchange_rates_dict
+                visibility_price, currency, exchange_rates_dict
             )
             stash_fee_usd = self.exchange_client.convert_currency_to_usd(
                 stash_fee_local, currency, exchange_rates_dict
@@ -115,12 +115,12 @@ class PriceConverter:
             country_name = country_names.get_country_name(country_code)
             
             # What user will pay (final price including VAT if applicable)
-            # For VAT-inclusive countries, local_price already includes VAT
-            # For VAT-exclusive countries, local_price is before tax, but user pays local_price + tax
+            # For VAT-inclusive countries, visibility_price already includes VAT
+            # For VAT-exclusive countries, visibility_price is before tax, but user pays visibility_price + tax
             if tax_calculator.is_vat_inclusive(country_code):
-                user_pays = local_price  # Price already includes VAT
+                user_pays = visibility_price  # Price already includes VAT
             else:
-                user_pays = local_price + vat_amount  # Price + tax
+                user_pays = visibility_price + vat_amount  # Price + tax
             
             return {
                 'Country': country_code,
@@ -128,8 +128,9 @@ class PriceConverter:
                 'Currency': currency,
                 'AppleStoreSku': sku['AppleStoreSku'],
                 'GooglePlaySku': sku['GooglePlaySku'],
-                'Local_Price': round(local_price, 2),
-                'User_Pays': round(user_pays, 2),  # What user will pay (final price)
+                'Local_Price': round(local_price_raw, 2),  # Raw conversion: USD * exchange_rate
+                'Visibility_Price': round(visibility_price, 2),  # Snapped tier price (what user sees in app stores)
+                'User_Pays': round(user_pays, 2),  # What user will pay (final price including VAT)
                 'VAT_Rate': round(vat_rate * 100, 1),  # As percentage
                 'VAT_Amount': round(vat_amount, 2),
                 'Gross_USD': round(gross_usd, 2),
