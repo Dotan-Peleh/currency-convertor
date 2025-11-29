@@ -174,6 +174,7 @@ class PriceConverter:
                 'Country': country_code,
                 'Country_Name': country_name,
                 'Currency': currency,
+                'Price_Tier': round(usd_price, 2),  # USD base price tier (0.99, 1.99, etc.)
                 'AppleStoreSku': sku['AppleStoreSku'],
                 'GooglePlaySku': sku['GooglePlaySku'],
                 'Local_Price': round(local_price_raw, 2),  # Raw conversion: USD * exchange_rate

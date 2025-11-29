@@ -10,6 +10,7 @@ from typing import Dict, Any
 
 import exchange_rates
 import price_converter
+import price_stability
 import sheets_client
 import config
 
@@ -91,6 +92,9 @@ def currency_conversion_handler(request):
         # Get country-currency mapping
         country_currency_map = get_country_currency_map()
         
+        # Read existing prices for stability check
+        existing_prices = sheets.read_price_matrix()
+        
         # Process all SKUs
         price_data = converter.process_all_skus(country_currency_map)
         
@@ -101,8 +105,24 @@ def currency_conversion_handler(request):
                 'body': json.dumps({'message': 'No price data generated', 'count': 0})
             }
         
+        # Apply price stability rules (prevent frequent changes)
+        stable_price_data = []
+        prices_kept_stable = 0
+        prices_updated = 0
+        
+        for price_row in price_data:
+            stable_row, was_updated = price_stability.apply_price_stability(price_row, existing_prices)
+            stable_price_data.append(stable_row)
+            
+            if was_updated:
+                prices_updated += 1
+            else:
+                prices_kept_stable += 1
+        
+        logger.info(f"Price stability: {prices_kept_stable} prices kept stable, {prices_updated} prices updated")
+        
         # Write to Google Sheets
-        sheets.write_price_matrix(price_data)
+        sheets.write_price_matrix(stable_price_data)
         
         # Log exchange rates - use the date from the API response
         # fetch_rates will retry if API returns stale data

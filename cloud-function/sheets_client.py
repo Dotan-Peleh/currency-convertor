@@ -101,6 +101,61 @@ class SheetsClient:
             logger.error(f"Error reading config sheet: {e}")
             raise
     
+    def read_price_matrix(self) -> Dict[str, Dict[str, any]]:
+        """
+        Read existing price data from the Price Matrix sheet.
+        Used for price stability - to compare with new prices and keep stable rows.
+        
+        Returns:
+            Dictionary mapping (country:sku) -> full price data dictionary
+        """
+        try:
+            sheet_name = config.GOOGLE_SHEETS_PRICE_MATRIX_SHEET
+            # Read all columns
+            range_name = f"{sheet_name}!A:N"
+            
+            result = self.sheets.values().get(
+                spreadsheetId=self.sheets_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if len(values) < 2:  # No data rows
+                logger.info("No existing price data found - first run")
+                return {}
+            
+            # Headers: Country, Country_Name, Currency, Price_Tier, AppleStoreSku, GooglePlaySku, Local_Price, User_Pays, VAT_Rate, VAT_Amount, Gross_USD, Stash_Fee_USD, Net_USD, Net_vs_Apple
+            existing_data = {}
+            
+            for row in values[1:]:  # Skip header
+                if len(row) < 8:  # Need at least User_Pays column
+                    continue
+                
+                try:
+                    country = row[0].strip() if len(row) > 0 else ''
+                    sku = row[4].strip() if len(row) > 4 else ''  # AppleStoreSku (index 4)
+                    user_pays_str = row[7].strip() if len(row) > 7 else '0'  # User_Pays (index 7)
+                    
+                    if country and sku and user_pays_str:
+                        try:
+                            user_pays = float(user_pays_str) if user_pays_str.replace('.', '').replace('-', '').replace('+', '').isdigit() else 0.0
+                            if user_pays > 0:  # Only store valid prices
+                                lookup_key = f"{country}:{sku}"
+                                # Store just the User_Pays for comparison (we'll keep entire row if stable)
+                                existing_data[lookup_key] = user_pays
+                        except (ValueError, AttributeError):
+                            continue
+                except (IndexError, AttributeError) as e:
+                    logger.debug(f"Error parsing row for price stability: {e}")
+                    continue
+            
+            logger.info(f"Read {len(existing_data)} existing prices for stability check")
+            return existing_data
+            
+        except Exception as e:
+            logger.warning(f"Could not read existing prices for stability: {e}. Will update all prices.")
+            return {}
+    
     def write_price_matrix(self, price_data: List[Dict[str, any]]):
         """
         Write price matrix data to the Price Matrix sheet.
@@ -113,8 +168,8 @@ class SheetsClient:
             
             # Prepare headers
             headers = [
-                'Country', 'Country_Name', 'Currency', 'AppleStoreSku', 'GooglePlaySku', 
-                'Local_Price', 'Visibility_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
+                'Country', 'Country_Name', 'Currency', 'Price_Tier', 'AppleStoreSku', 'GooglePlaySku', 
+                'Local_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
                 'Gross_USD', 'Stash_Fee_USD', 'Net_USD', 'Net_vs_Apple'
             ]
             
@@ -134,11 +189,11 @@ class SheetsClient:
                     row_data.get('Country', ''),
                     row_data.get('Country_Name', ''),
                     row_data.get('Currency', ''),
+                    row_data.get('Price_Tier', 0),  # USD base price tier (0.99, 1.99, etc.)
                     row_data.get('AppleStoreSku', ''),
                     row_data.get('GooglePlaySku', ''),
                     row_data.get('Local_Price', 0),  # Raw conversion: USD * exchange_rate
-                    row_data.get('Visibility_Price', 0),  # Snapped tier price (what user sees)
-                    row_data.get('User_Pays', 0),  # What user will pay (including VAT)
+                    row_data.get('User_Pays', 0),  # What user will pay (including VAT) - this is the visibility price
                     row_data.get('VAT_Rate', 0),
                     row_data.get('VAT_Amount', 0),
                     row_data.get('Gross_USD', 0),
@@ -164,6 +219,124 @@ class SheetsClient:
                 valueInputOption='USER_ENTERED',
                 body=body
             ).execute()
+            
+            # Set number formatting for currency columns (USD columns should be currency format)
+            # After adding Price_Tier: Column K (index 10) = Gross_USD, Column L (index 11) = Stash_Fee_USD, Column M (index 12) = Net_USD
+            # Also format Price_Tier (column D, index 3) as currency
+            # Get the sheet ID first
+            try:
+                sheet_metadata = self.sheets.get(
+                    spreadsheetId=self.sheets_id
+                ).execute()
+                sheet_id = None
+                for sheet in sheet_metadata.get('sheets', []):
+                    if sheet['properties']['title'] == sheet_name:
+                        sheet_id = sheet['properties']['sheetId']
+                        break
+                
+                if sheet_id is not None:
+                    requests = []
+                    
+                    # Format Price_Tier (column D, index 3) as currency
+                    requests.append({
+                        'repeatCell': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': 1,  # Skip header row
+                                'endRowIndex': len(price_data) + 1,
+                                'startColumnIndex': 3,  # Column D (Price_Tier)
+                                'endColumnIndex': 4
+                            },
+                            'cell': {
+                                'userEnteredFormat': {
+                                    'numberFormat': {
+                                        'type': 'CURRENCY',
+                                        'pattern': '"$"#,##0.00'
+                                    }
+                                }
+                            },
+                            'fields': 'userEnteredFormat.numberFormat'
+                        }
+                    })
+                    
+                    # Format USD columns as currency (columns K, L, M = Gross_USD, Stash_Fee_USD, Net_USD)
+                    # Column indices: K=10, L=11, M=12 (0-based)
+                    
+                    # Format Gross_USD (column K, index 10) as currency
+                    requests.append({
+                        'repeatCell': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': 1,  # Skip header row
+                                'endRowIndex': len(price_data) + 1,
+                                'startColumnIndex': 10,  # Column K (Gross_USD)
+                                'endColumnIndex': 11
+                            },
+                            'cell': {
+                                'userEnteredFormat': {
+                                    'numberFormat': {
+                                        'type': 'CURRENCY',
+                                        'pattern': '"$"#,##0.00'
+                                    }
+                                }
+                            },
+                            'fields': 'userEnteredFormat.numberFormat'
+                        }
+                    })
+                    
+                    # Format Stash_Fee_USD (column L, index 11) as currency
+                    requests.append({
+                        'repeatCell': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': 1,
+                                'endRowIndex': len(price_data) + 1,
+                                'startColumnIndex': 11,  # Column L (Stash_Fee_USD)
+                                'endColumnIndex': 12
+                            },
+                            'cell': {
+                                'userEnteredFormat': {
+                                    'numberFormat': {
+                                        'type': 'CURRENCY',
+                                        'pattern': '"$"#,##0.00'
+                                    }
+                                }
+                            },
+                            'fields': 'userEnteredFormat.numberFormat'
+                        }
+                    })
+                    
+                    # Format Net_USD (column M, index 12) as currency
+                    requests.append({
+                        'repeatCell': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': 1,
+                                'endRowIndex': len(price_data) + 1,
+                                'startColumnIndex': 12,  # Column M (Net_USD)
+                                'endColumnIndex': 13
+                            },
+                            'cell': {
+                                'userEnteredFormat': {
+                                    'numberFormat': {
+                                        'type': 'CURRENCY',
+                                        'pattern': '"$"#,##0.00'
+                                    }
+                                }
+                            },
+                            'fields': 'userEnteredFormat.numberFormat'
+                        }
+                    })
+                    
+                    # Apply all formatting requests
+                    if requests:
+                        self.sheets.batchUpdate(
+                            spreadsheetId=self.sheets_id,
+                            body={'requests': requests}
+                        ).execute()
+                        logger.info(f"Applied currency formatting to Price_Tier and USD columns (D, K, L, M)")
+            except Exception as e:
+                logger.warning(f"Could not apply number formatting: {e}. Values are correct but may need manual formatting in Google Sheets.")
             
             logger.info(f"Wrote {len(price_data)} rows to price matrix")
             

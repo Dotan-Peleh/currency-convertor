@@ -3,7 +3,7 @@
 # gcloud scheduler jobs create http currency-conversion-daily --config-file=scheduler.yaml
 
 name: currency-conversion-daily
-schedule: "0 0 * * *"  # Daily at 00:00 UTC
+schedule: "0 0,12 * * *"  # Twice daily at 00:00 UTC (midnight) and 12:00 UTC (noon)
 timeZone: "UTC"
 httpTarget:
   uri: "https://REGION-PROJECT_ID.cloudfunctions.net/currency-conversion"

@@ -35,3 +35,6 @@ SKU_PATTERN = r"com\.peerplay\.mergecruise\.credit"
 # Logging configuration
 LOG_LEVEL = "INFO"
 
+# Price stability configuration
+PRICE_CHANGE_THRESHOLD = 0.05  # 5% - only update prices if change is more than this
+
