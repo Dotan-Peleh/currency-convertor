@@ -3,6 +3,7 @@ Core price conversion logic.
 """
 
 import logging
+import math
 from typing import List, Dict, Optional
 from datetime import datetime
 import exchange_rates
@@ -96,13 +97,43 @@ class PriceConverter:
                     f"Adjusting to next tier."
                 )
                 # Find next tier above raw price
-                tiers = tier_snapper.get_tiers_for_currency(currency)
+                tiers = tier_snapper.get_tiers_for_currency(currency, reference_price=local_price_raw)
                 for tier in tiers:
                     if tier >= local_price_raw:
                         visibility_price = tier
                         break
+                
+                # If still not found, generate a nice number above the raw price
                 if visibility_price < local_price_raw:
-                    visibility_price = tiers[-1]  # Use highest tier as fallback
+                    # Round up to next nice number based on magnitude
+                    if local_price_raw < 1:
+                        # Sub-unit: round to next .99
+                        visibility_price = math.ceil(local_price_raw * 100) / 100
+                        if visibility_price == local_price_raw:
+                            visibility_price += 0.01
+                    elif local_price_raw < 10:
+                        # Single digits: round to next .99
+                        visibility_price = math.ceil(local_price_raw) + 0.99
+                    elif local_price_raw < 100:
+                        # Tens: round to next .99
+                        visibility_price = math.ceil(local_price_raw / 10) * 10 - 0.01
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 10
+                    elif local_price_raw < 1000:
+                        # Hundreds: round to next 99
+                        visibility_price = math.ceil(local_price_raw / 100) * 100 - 1
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 100
+                    elif local_price_raw < 10000:
+                        # Thousands: round to next 900
+                        visibility_price = math.ceil(local_price_raw / 1000) * 1000 - 100
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 1000
+                    else:
+                        # Tens of thousands+: round to next 000
+                        visibility_price = math.ceil(local_price_raw / 10000) * 10000
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 10000
             
             # Step 3: Calculate tax (based on visibility price - what user actually pays)
             vat_rate = tax_calculator.get_tax_rate(country_code)
