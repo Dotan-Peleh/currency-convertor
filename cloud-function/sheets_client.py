@@ -170,6 +170,72 @@ class SheetsClient:
             logger.error(f"Error writing price matrix: {e}")
             raise
     
+    def has_exchange_rates_for_date(self, date: str) -> bool:
+        """
+        Check if exchange rates for a specific date are already logged.
+        
+        Args:
+            date: Date string (YYYY-MM-DD)
+            
+        Returns:
+            True if rates for this date exist, False otherwise
+        """
+        try:
+            sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
+            # Read first column to check for the date
+            range_name = f"{sheet_name}!A:A"
+            result = self.sheets.values().get(
+                spreadsheetId=self.sheets_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            # Skip header row (index 0) and check if date exists
+            for row in values[1:]:
+                if row and len(row) > 0 and row[0] == date:
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking if date exists: {e}")
+            # If we can't check, assume it doesn't exist to avoid skipping
+            return False
+    
+    def get_last_logged_date(self) -> Optional[str]:
+        """
+        Get the most recent date for which exchange rates are logged.
+        
+        Returns:
+            Date string (YYYY-MM-DD) of the last logged rates, or None if no rates exist
+        """
+        try:
+            sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
+            # Read first column to get all dates
+            range_name = f"{sheet_name}!A:A"
+            result = self.sheets.values().get(
+                spreadsheetId=self.sheets_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if len(values) < 2:  # Only header or empty
+                return None
+            
+            # Get all dates (skip header)
+            dates = []
+            for row in values[1:]:
+                if row and len(row) > 0:
+                    dates.append(row[0])
+            
+            if not dates:
+                return None
+            
+            # Return the most recent date (assuming dates are in chronological order)
+            # If not sorted, we'd need to parse and compare, but typically they are appended chronologically
+            return dates[-1]
+        except Exception as e:
+            logger.warning(f"Error getting last logged date: {e}")
+            return None
+    
     def log_exchange_rates(self, rates: Dict[str, float], date: str):
         """
         Log exchange rates to the Exchange Rates Log sheet.
@@ -179,6 +245,11 @@ class SheetsClient:
             date: Date string (YYYY-MM-DD)
         """
         try:
+            # Check if rates for this date already exist
+            if self.has_exchange_rates_for_date(date):
+                logger.warning(f"Exchange rates for {date} already exist. Skipping duplicate log.")
+                return
+            
             sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
             
             # Prepare data rows with country names

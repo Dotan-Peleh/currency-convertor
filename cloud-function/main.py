@@ -5,7 +5,7 @@ Cloud Function entry point for currency conversion system.
 import logging
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 import exchange_rates
@@ -63,6 +63,31 @@ def currency_conversion_handler(request):
         sheets = sheets_client.SheetsClient()
         converter = price_converter.PriceConverter(sheets, exchange_client)
         
+        # Check for missed days - ensure we haven't skipped any dates
+        today = datetime.utcnow().strftime('%Y-%m-%d')
+        last_logged_date = sheets.get_last_logged_date()
+        
+        if last_logged_date:
+            try:
+                last_date_obj = datetime.strptime(last_logged_date, '%Y-%m-%d')
+                today_obj = datetime.strptime(today, '%Y-%m-%d')
+                days_missing = (today_obj - last_date_obj).days
+                
+                if days_missing > 1:
+                    logger.warning(
+                        f"Gap detected: Last logged date was {last_logged_date}, today is {today}. "
+                        f"Missing {days_missing - 1} day(s) of exchange rates. "
+                        f"This may indicate the cron job failed or was not running."
+                    )
+                elif days_missing == 1:
+                    logger.info(f"Last logged date was {last_logged_date}, today is {today}. This is expected.")
+            except ValueError as e:
+                logger.warning(f"Could not parse last logged date '{last_logged_date}': {e}")
+        
+        # Check if today's rates are already logged
+        if sheets.has_exchange_rates_for_date(today):
+            logger.info(f"Exchange rates for {today} already exist. Will update with fresh data.")
+        
         # Get country-currency mapping
         country_currency_map = get_country_currency_map()
         
@@ -80,8 +105,16 @@ def currency_conversion_handler(request):
         sheets.write_price_matrix(price_data)
         
         # Log exchange rates - use the date from the API response
-        exchange_rates_dict, api_date = exchange_client.fetch_rates()
+        # fetch_rates will retry if API returns stale data
+        exchange_rates_dict, api_date = exchange_client.fetch_rates(max_retries=3, retry_delay=300)
         sheets.log_exchange_rates(exchange_rates_dict, api_date)
+        
+        # Final validation - ensure we logged today's rates (or at least recent rates)
+        if api_date != today:
+            logger.warning(
+                f"Logged rates for {api_date} but today is {today}. "
+                f"API may not have updated yet. Consider checking manually later."
+            )
         
         logger.info(f"Successfully processed {len(price_data)} price combinations")
         
@@ -90,7 +123,9 @@ def currency_conversion_handler(request):
             'body': json.dumps({
                 'message': 'Currency conversion completed successfully',
                 'count': len(price_data),
-                'date': api_date
+                'date': api_date,
+                'expected_date': today,
+                'date_match': api_date == today
             })
         }
         
