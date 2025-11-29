@@ -84,9 +84,9 @@ def currency_conversion_handler(request):
             except ValueError as e:
                 logger.warning(f"Could not parse last logged date '{last_logged_date}': {e}")
         
-        # Check if today's rates are already logged
+        # Check if today's rates are already logged (will be overwritten)
         if sheets.has_exchange_rates_for_date(today):
-            logger.info(f"Exchange rates for {today} already exist. Will update with fresh data.")
+            logger.info(f"Exchange rates for {today} already exist. Will overwrite with fresh data.")
         
         # Get country-currency mapping
         country_currency_map = get_country_currency_map()
