@@ -101,8 +101,11 @@ gcloud functions logs read currency-conversion --gen2 --region=us-central1 --lim
 ## What's Next?
 
 - The system runs automatically twice daily at 12:00 and 24:00 UTC
+- Uses Apple's official pricing tiers from their CSV (44 currencies, 600-800 tiers each)
 - Prices are kept stable (only update if change > 5% or beneficial)
-- Prices prefer .99 endings for better presentation (e.g., 110.49 → 110.99)
+- **Local_Price**: Raw conversion (USD × exchange_rate)
+- **User_Pays**: Apple's price (if >= Local_Price) or snapped tier (ensures User_Pays >= Local_Price)
+- **Stash_Price**: Price to send to Stash (pre-tax for US/CA/BR, VAT-inclusive for Europe)
 - Edit the Config sheet to add/remove SKUs
 - View results in the Price Matrix sheet
 - Check exchange rate history in Exchange Rates Log
