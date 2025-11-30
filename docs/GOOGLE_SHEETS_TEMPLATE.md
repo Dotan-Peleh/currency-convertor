@@ -44,21 +44,27 @@ com.peerplay.mergecruise.credits200000	com.peerplay.mergecruise.credits200000	19
 
 **Columns** (Row 1 is header):
 - `Country` (Column A) - ISO country code (e.g., "US", "GB", "DE")
-- `Currency` (Column B) - Currency code (e.g., "USD", "GBP", "EUR")
-- `AppleStoreSku` (Column C) - Apple App Store SKU
-- `GooglePlaySku` (Column D) - Google Play Store SKU
-- `Local_Price` (Column E) - Price in local currency after tier snapping
-- `VAT_Rate` (Column F) - VAT/GST rate as percentage (e.g., "19.0" for 19%)
-- `VAT_Amount` (Column G) - VAT/GST amount in local currency
-- `Gross_USD` (Column H) - Gross revenue in USD
-- `Stash_Fee_USD` (Column I) - Stash processing fee in USD (0% for first year)
-- `Net_USD` (Column J) - Net revenue in USD after taxes and fees
-- `Net_vs_Apple` (Column K) - Percentage difference vs Apple's net revenue (e.g., "+15.2%")
+- `Country_Name` (Column B) - Full country name (e.g., "United States", "Germany")
+- `Currency` (Column C) - Currency code (e.g., "USD", "GBP", "EUR")
+- `Price_Tier` (Column D) - Original USD base price tier (e.g., 0.99, 1.99, 4.99)
+- `AppleStoreSku` (Column E) - Apple App Store SKU
+- `GooglePlaySku` (Column F) - Google Play Store SKU
+- `Local_Price` (Column G) - Raw conversion price in local currency (USD × exchange_rate)
+- `User_Pays` (Column H) - Final price user will pay (with .99 preference, includes VAT if applicable)
+- `VAT_Rate` (Column I) - VAT/GST rate as percentage (e.g., "19.0" for 19%)
+- `VAT_Amount` (Column J) - VAT/GST amount in local currency
+- `Gross_USD` (Column K) - Gross revenue in USD (formatted as currency)
+- `Stash_Fee_USD` (Column L) - Stash processing fee in USD (0% for first year, formatted as currency)
+- `Net_USD` (Column M) - Net revenue in USD after taxes and fees (formatted as currency)
+- `Net_vs_Apple` (Column N) - Percentage difference vs Apple's net revenue (e.g., "+15.2%")
 
 **Notes**:
 - This sheet is completely overwritten on each run
 - Data is sorted by Country, then by SKU Cost
 - One row per country-SKU combination
+- **Price Stability**: Prices only update if change > 5% or beneficial (prevents frequent changes)
+- **.99 Preference**: User_Pays prices prefer .99 endings (e.g., 110.49 → 110.99) for better presentation
+- **Price_Tier**: Shows the original USD base price for reference
 
 ## Sheet 3: Exchange Rates Log
 
@@ -72,9 +78,9 @@ com.peerplay.mergecruise.credits200000	com.peerplay.mergecruise.credits200000	19
 - `Source` (Column E) - Source of the rate (e.g., "exchangerate-api.com")
 
 **Notes**:
-- New rates are appended daily (not overwritten)
-- Useful for auditing and tracking rate changes over time
-- Can be used to analyze historical pricing
+- Latest rates overwrite the fixed range A1:E1661 (keeps only current rates)
+- Useful for auditing and tracking current exchange rates
+- Previous rates are not kept (only latest snapshot)
 
 ## Setup Instructions
 

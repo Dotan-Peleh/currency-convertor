@@ -100,7 +100,9 @@ gcloud functions logs read currency-conversion --gen2 --region=us-central1 --lim
 
 ## What's Next?
 
-- The system runs automatically daily at 00:00 UTC
+- The system runs automatically twice daily at 12:00 and 24:00 UTC
+- Prices are kept stable (only update if change > 5% or beneficial)
+- Prices prefer .99 endings for better presentation (e.g., 110.49 → 110.99)
 - Edit the Config sheet to add/remove SKUs
 - View results in the Price Matrix sheet
 - Check exchange rate history in Exchange Rates Log

@@ -95,8 +95,21 @@ def currency_conversion_handler(request):
         # Read existing prices for stability check
         existing_prices = sheets.read_price_matrix()
         
-        # Process all SKUs
-        price_data = converter.process_all_skus(country_currency_map)
+        # Try to read exchange rates from sheet first (latest rates from Exchange Rates Log)
+        # This ensures we use the most recent rates that were logged
+        exchange_rates_from_sheet = sheets.read_exchange_rates_from_sheet()
+        
+        if exchange_rates_from_sheet:
+            logger.info(f"Using {len(exchange_rates_from_sheet)} exchange rates from Exchange Rates Log sheet")
+            # Use rates from sheet for calculations
+            exchange_rates_dict = exchange_rates_from_sheet
+        else:
+            logger.info("No rates found in sheet, fetching from API")
+            # Fetch from API if sheet is empty
+            exchange_rates_dict, _ = exchange_client.fetch_rates()
+        
+        # Process all SKUs with the exchange rates (from sheet or API)
+        price_data = converter.process_all_skus_with_rates(country_currency_map, exchange_rates_dict)
         
         if not price_data:
             logger.warning("No price data generated")

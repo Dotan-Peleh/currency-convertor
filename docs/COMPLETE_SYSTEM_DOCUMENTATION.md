@@ -25,7 +25,9 @@ The Currency Conversion System is a GCP-hosted automated pricing engine that:
 - Applies Stash processing fees (currently 0% for first year)
 - Calculates net revenue and compares it to Apple/Google platform fees
 - Outputs complete price matrix to Google Sheets
-- Runs automatically daily via Cloud Scheduler
+- Runs automatically twice daily via Cloud Scheduler (12:00 and 24:00 UTC)
+- Implements price stability to prevent frequent changes
+- Prioritizes .99 endings for better price presentation
 
 **Key Benefits:**
 - Automated daily updates with latest exchange rates
@@ -40,7 +42,7 @@ The Currency Conversion System is a GCP-hosted automated pricing engine that:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Cloud Scheduler                           │
-│              (Daily at 00:00 UTC)                           │
+│         (Twice Daily: 12:00 & 24:00 UTC)                    │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
@@ -85,8 +87,9 @@ The Currency Conversion System is a GCP-hosted automated pricing engine that:
 ### Step 1: Trigger
 
 **Automated:**
-- Cloud Scheduler triggers daily at 00:00 UTC
+- Cloud Scheduler triggers twice daily at 00:00 UTC (midnight) and 12:00 UTC (noon)
 - Sends HTTP GET request to Cloud Function
+- Price stability logic prevents frequent price changes (< 5% threshold)
 
 **Manual:**
 - Can be triggered anytime via HTTP call:

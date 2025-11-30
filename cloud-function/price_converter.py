@@ -1,9 +1,12 @@
 """
 Core price conversion logic.
+Uses Apple's exact pricing from their CSV for accurate pricing.
 """
 
 import logging
 import math
+import json
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 import exchange_rates
@@ -14,6 +17,34 @@ import country_names
 import config
 
 logger = logging.getLogger(__name__)
+
+# Load Apple pricing map (USD tier -> {currency: customerPrice})
+APPLE_PRICING_MAP: Dict[float, Dict[str, float]] = {}
+PRICING_MAP_FILE = os.path.join(os.path.dirname(__file__), 'apple_pricing_map.json')
+
+def _load_apple_pricing_map():
+    """Load Apple pricing map from JSON file"""
+    global APPLE_PRICING_MAP
+    if APPLE_PRICING_MAP:
+        return APPLE_PRICING_MAP
+    
+    try:
+        if os.path.exists(PRICING_MAP_FILE):
+            with open(PRICING_MAP_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert string keys to float
+                APPLE_PRICING_MAP = {float(k): {ck: float(cv) for ck, cv in v.items()} for k, v in data.items()}
+                logger.info(f"Loaded Apple pricing map for {len(APPLE_PRICING_MAP)} USD tiers")
+            return APPLE_PRICING_MAP
+        else:
+            logger.warning(f"Apple pricing map file not found: {PRICING_MAP_FILE}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error loading Apple pricing map: {e}")
+        return {}
+
+# Load pricing map on module import
+_load_apple_pricing_map()
 
 
 class PriceConverter:
@@ -80,17 +111,45 @@ class PriceConverter:
         try:
             usd_price = float(sku['Cost'])
             
-            # Step 1: Convert USD to local currency (raw conversion using daily exchange rate)
+            # Step 1: Always calculate raw conversion (Local_Price = pure USD × exchange_rate)
+            # This represents the exact mathematical conversion without any rounding
             local_price_raw = self.exchange_client.convert_usd_to_currency(
                 usd_price, currency, exchange_rates_dict
             )
             
-            # Step 2: Snap to tier with "up" mode (always rounds up to nice number)
-            # This ensures visibility price is always higher than raw price (looks better)
-            visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency, mode="up")
+            # Step 2: Get Apple's price for User_Pays (what user actually sees/pays)
+            # This uses Apple's exact pricing from their CSV
+            apple_price = None
+            if APPLE_PRICING_MAP and usd_price in APPLE_PRICING_MAP:
+                if currency in APPLE_PRICING_MAP[usd_price]:
+                    apple_price = APPLE_PRICING_MAP[usd_price][currency]
+                    logger.debug(f"Using Apple price for {currency}: {apple_price:.2f} (USD tier: {usd_price:.2f})")
             
-            # Ensure visibility price is always >= local_price_raw (safety check)
-            if visibility_price < local_price_raw:
+            # Step 3: Determine visibility_price (what user will pay)
+            # CRITICAL: User_Pays must ALWAYS be >= Local_Price (never lower)
+            # This ensures we never charge less than the raw conversion
+            if apple_price is not None:
+                # Use Apple's price, but ensure it's not lower than raw conversion
+                # Apple prices are based on historical exchange rates, which may be lower than current rates
+                if apple_price >= local_price_raw:
+                    # Apple price is higher or equal - use it (matches Apple's pricing)
+                    visibility_price = apple_price
+                else:
+                    # Apple price is lower than raw conversion - snap raw price to tier instead
+                    # This ensures we never charge less than the current exchange rate
+                    visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency, mode="up")
+                    logger.debug(
+                        f"Apple price {apple_price:.2f} {currency} < Local_Price {local_price_raw:.2f} {currency} "
+                        f"for ${usd_price:.2f} USD tier. Using snapped tier: {visibility_price:.2f} {currency}"
+                    )
+            else:
+                # Fallback: Snap raw price to tier with "up" mode
+                visibility_price = tier_snapper.snap_to_tier(local_price_raw, currency, mode="up")
+            
+            # CRITICAL: Ensure visibility price is ALWAYS strictly greater than local_price_raw
+            # If they're equal, round up by at least a small amount
+            # (Only check if we didn't use Apple price, since Apple prices are already correct)
+            if apple_price is None and visibility_price <= local_price_raw:
                 # This shouldn't happen with "up" mode, but just in case
                 logger.warning(
                     f"Visibility price {visibility_price} < raw price {local_price_raw} for {currency}. "
@@ -103,37 +162,39 @@ class PriceConverter:
                         visibility_price = tier
                         break
                 
-                # If still not found, generate a nice number above the raw price
-                if visibility_price < local_price_raw:
+                # If still not found or equal, generate a nice number above the raw price
+                if visibility_price <= local_price_raw:
                     # Round up to next nice number based on magnitude
                     if local_price_raw < 1:
-                        # Sub-unit: round to next .99
+                        # Sub-unit: round up to next cent
                         visibility_price = math.ceil(local_price_raw * 100) / 100
-                        if visibility_price == local_price_raw:
+                        if visibility_price <= local_price_raw:
                             visibility_price += 0.01
                     elif local_price_raw < 10:
-                        # Single digits: round to next .99
-                        visibility_price = math.ceil(local_price_raw) + 0.99
+                        # Single digits: round up to next integer
+                        visibility_price = math.ceil(local_price_raw)
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 1
                     elif local_price_raw < 100:
-                        # Tens: round to next .99
-                        visibility_price = math.ceil(local_price_raw / 10) * 10 - 0.01
+                        # Tens: round up to next integer
+                        visibility_price = math.ceil(local_price_raw)
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 1
+                    elif local_price_raw < 1000:
+                        # Hundreds: round up to next 5
+                        visibility_price = math.ceil(local_price_raw / 5) * 5
+                        if visibility_price <= local_price_raw:
+                            visibility_price += 5
+                    elif local_price_raw < 10000:
+                        # Thousands: round up to next 10
+                        visibility_price = math.ceil(local_price_raw / 10) * 10
                         if visibility_price <= local_price_raw:
                             visibility_price += 10
-                    elif local_price_raw < 1000:
-                        # Hundreds: round to next 99
-                        visibility_price = math.ceil(local_price_raw / 100) * 100 - 1
+                    else:
+                        # Tens of thousands+: round up to next 100
+                        visibility_price = math.ceil(local_price_raw / 100) * 100
                         if visibility_price <= local_price_raw:
                             visibility_price += 100
-                    elif local_price_raw < 10000:
-                        # Thousands: round to next 900
-                        visibility_price = math.ceil(local_price_raw / 1000) * 1000 - 100
-                        if visibility_price <= local_price_raw:
-                            visibility_price += 1000
-                    else:
-                        # Tens of thousands+: round to next 000
-                        visibility_price = math.ceil(local_price_raw / 10000) * 10000
-                        if visibility_price <= local_price_raw:
-                            visibility_price += 10000
             
             # Step 3: Calculate tax (based on visibility price - what user actually pays)
             vat_rate = tax_calculator.get_tax_rate(country_code)
@@ -170,6 +231,11 @@ class PriceConverter:
             else:
                 user_pays = visibility_price + vat_amount  # Price + tax
             
+            # Calculate Stash_Price based on Stash tax handling rules
+            # US, CA, BR: Send pre-tax price (Stash adds tax on top)
+            # Europe: Send price with VAT included
+            stash_price = tax_calculator.get_stash_price(user_pays, country_code)
+            
             return {
                 'Country': country_code,
                 'Country_Name': country_name,
@@ -177,9 +243,9 @@ class PriceConverter:
                 'Price_Tier': round(usd_price, 2),  # USD base price tier (0.99, 1.99, etc.)
                 'AppleStoreSku': sku['AppleStoreSku'],
                 'GooglePlaySku': sku['GooglePlaySku'],
-                'Local_Price': round(local_price_raw, 2),  # Raw conversion: USD * exchange_rate
-                'Visibility_Price': round(visibility_price, 2),  # Snapped tier price (what user sees in app stores)
-                'User_Pays': round(user_pays, 2),  # What user will pay (final price including VAT)
+                'Local_Price': round(local_price_raw, 2),  # Raw conversion: USD * exchange_rate (pure conversion)
+                'User_Pays': round(user_pays, 2),  # What user will pay (rounded up from Local_Price, including VAT)
+                'Stash_Price': round(stash_price, 2),  # Price to send to Stash (pre-tax for US/CA/BR, VAT-inclusive for Europe)
                 'VAT_Rate': round(vat_rate * 100, 1),  # As percentage
                 'VAT_Amount': round(vat_amount, 2),
                 'Gross_USD': round(gross_usd, 2),
@@ -195,9 +261,25 @@ class PriceConverter:
     def process_all_skus(self, country_currency_map: Dict[str, str]) -> List[Dict[str, any]]:
         """
         Process all SKUs for all countries.
+        Fetches exchange rates from API.
         
         Args:
             country_currency_map: Dictionary mapping country codes to currency codes
+            
+        Returns:
+            List of price data dictionaries
+        """
+        # Fetch exchange rates from API
+        exchange_rates_dict, _ = self.exchange_client.fetch_rates()
+        return self.process_all_skus_with_rates(country_currency_map, exchange_rates_dict)
+    
+    def process_all_skus_with_rates(self, country_currency_map: Dict[str, str], exchange_rates_dict: Dict[str, float]) -> List[Dict[str, any]]:
+        """
+        Process all SKUs for all countries using provided exchange rates.
+        
+        Args:
+            country_currency_map: Dictionary mapping country codes to currency codes
+            exchange_rates_dict: Pre-fetched exchange rates dictionary
             
         Returns:
             List of price data dictionaries
@@ -207,9 +289,6 @@ class PriceConverter:
         if not skus:
             logger.warning("No SKUs found in config sheet")
             return []
-        
-        # Fetch exchange rates (extract rates dict, ignore date)
-        exchange_rates_dict, _ = self.exchange_client.fetch_rates()
         
         # Process each SKU for each country
         price_data = []

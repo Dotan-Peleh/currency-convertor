@@ -35,7 +35,7 @@ class ExchangeRateClient:
         Args:
             max_retries: Maximum number of retries if API returns stale data
             retry_delay: Delay in seconds between retries
-            
+        
         Returns:
             Tuple of (rates dictionary, date string)
             - rates: Dictionary mapping currency codes to exchange rates (USD to currency)

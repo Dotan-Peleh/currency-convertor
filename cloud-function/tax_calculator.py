@@ -93,6 +93,12 @@ VAT_INCLUSIVE_COUNTRIES = {
 # Countries where VAT is excluded from display price (tax collected separately)
 VAT_EXCLUSIVE_COUNTRIES = {'US', 'CA'}
 
+# Stash tax handling rules:
+# - US, Canada, Brazil: Stash adds tax on top (pre-tax pricing) - send price WITHOUT tax
+# - Europe: Prices are VAT inclusive - send price WITH tax included
+STASH_PRE_TAX_COUNTRIES = {'US', 'CA', 'BR'}  # Stash adds tax on top
+STASH_VAT_INCLUSIVE_COUNTRIES = VAT_INCLUSIVE_COUNTRIES - {'BR'}  # Europe (exclude BR as it's pre-tax for Stash)
+
 
 def get_tax_rate(country_code: str) -> float:
     """
@@ -152,4 +158,46 @@ def calculate_tax(price: float, country_code: str) -> Tuple[float, float]:
         tax_amount = price * tax_rate
         net_price = price
         return tax_amount, net_price
+
+
+def get_stash_price(display_price: float, country_code: str) -> float:
+    """
+    Get the price to send to Stash based on their tax handling rules.
+    
+    Stash tax handling:
+    - US, Canada, Brazil: Stash adds tax on top (pre-tax pricing)
+      → Send price WITHOUT tax (pre-tax price)
+    - Europe: Prices are VAT inclusive
+      → Send price WITH tax included (same as display price)
+    
+    Note: display_price (User_Pays) may or may not include VAT depending on country:
+    - VAT-inclusive countries (BR, EU): User_Pays includes VAT
+    - VAT-exclusive countries (US, CA): User_Pays is pre-tax
+    
+    Args:
+        display_price: The price the user will pay (User_Pays)
+        country_code: ISO country code
+        
+    Returns:
+        Price to send to Stash
+    """
+    country_code = country_code.upper()
+    
+    # US, Canada, Brazil: Stash adds tax on top - send pre-tax price
+    if country_code in STASH_PRE_TAX_COUNTRIES:
+        # For US/CA: display_price is already pre-tax (no VAT in User_Pays)
+        # For BR: display_price includes VAT (BR is VAT-inclusive), so remove it
+        if country_code == 'BR':
+            # Brazil is VAT-inclusive in our system, so User_Pays includes VAT
+            # Stash wants pre-tax, so remove VAT
+            tax_rate = get_tax_rate(country_code)
+            if tax_rate > 0:
+                pre_tax_price = display_price / (1 + tax_rate)
+                return pre_tax_price
+        # US and CA: display_price is already pre-tax (no VAT)
+        return display_price
+    
+    # Europe and other VAT-inclusive countries: Send price with VAT included
+    # The display_price already includes VAT, so send it as-is
+    return display_price
 

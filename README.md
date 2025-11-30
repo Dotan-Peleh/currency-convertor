@@ -17,20 +17,22 @@ This system automatically:
 
 - **Multi-currency support**: Handles 50+ countries and currencies
 - **Tax calculation**: VAT-inclusive/exclusive logic for different countries
-- **Tier snapping**: Country-specific price tier definitions
+- **Tier snapping**: Country-specific price tier definitions with .99 ending preference
+- **Price stability**: Prevents frequent price changes (< 5% threshold)
 - **Apple comparison**: Shows revenue advantage vs Apple's 30% fee
-- **Automated**: Runs daily at 00:00 UTC
+- **Automated**: Runs twice daily at 12:00 and 24:00 UTC
 - **Cost-effective**: $0/month (within GCP free tiers)
 
 ## Architecture
 
 ```
-Cloud Scheduler (Daily 00:00 UTC)
+Cloud Scheduler (Twice Daily: 12:00 & 24:00 UTC)
     ↓
 Cloud Function (Python)
     ↓
     ├─→ Exchange Rate API (exchangerate-api.com)
-    ├─→ Google Sheets (Read Config)
+    ├─→ Google Sheets (Read Config & Existing Prices)
+    ├─→ Price Stability Check (Prevent Frequent Changes)
     └─→ Google Sheets (Write Results)
 ```
 
@@ -86,8 +88,23 @@ STASH_FIXED_FEE = 0.0
 
 Configurable in `cloud-function/config.py`:
 ```python
-TIER_SNAPPING_MODE = "nearest"  # Options: "nearest", "up", "down"
+TIER_SNAPPING_MODE = "up"  # Options: "nearest", "up", "down"
 ```
+
+The system now prioritizes .99 endings for better price presentation:
+- Example: 110.49 → 110.99 (within 2-unit limit)
+- Example: 4.52 → 4.99
+- Prices always increase slightly to look better to customers
+
+### Price Stability
+
+The system prevents frequent price changes to maintain customer trust:
+- Prices only update if change is > 5% or beneficial (price decrease)
+- Small fluctuations (< 5%) keep existing prices stable
+- Configurable threshold in `cloud-function/config.py`:
+  ```python
+  PRICE_CHANGE_THRESHOLD = 0.05  # 5%
+  ```
 
 ## Google Sheets Structure
 
@@ -97,7 +114,7 @@ TIER_SNAPPING_MODE = "nearest"  # Options: "nearest", "up", "down"
 - `Cost` - USD base price
 
 ### Sheet 2: Price Matrix (Auto-generated)
-- Country, Currency, SKUs, Local Price, VAT, Fees, Net Revenue, vs Apple comparison
+- Country, Country_Name, Currency, Price_Tier, SKUs, Local_Price, User_Pays, VAT, Fees, Net Revenue, vs Apple comparison
 
 ### Sheet 3: Exchange Rates Log (Auto-generated)
 - Historical exchange rate tracking
@@ -147,6 +164,7 @@ gcloud functions call currency-conversion --gen2 --region=us-central1
 Complete documentation is available in the `docs/` directory:
 
 - **[COMPLETE_SYSTEM_DOCUMENTATION.md](docs/COMPLETE_SYSTEM_DOCUMENTATION.md)** - Full system logic, formulas, and examples
+- **[PRICE_STABILITY.md](docs/PRICE_STABILITY.md)** - Price stability and twice-daily updates
 - **[API_LIMITS_AND_LOGIC.md](docs/API_LIMITS_AND_LOGIC.md)** - API limits, costs, and update frequency
 - **[SETUP.md](docs/SETUP.md)** - Step-by-step setup instructions
 - **[GOOGLE_SHEETS_TEMPLATE.md](docs/GOOGLE_SHEETS_TEMPLATE.md)** - Google Sheets structure guide

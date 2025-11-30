@@ -101,7 +101,7 @@ FUNCTION_URL=$(gcloud functions describe currency-conversion \
 
 gcloud scheduler jobs create http currency-conversion-daily \
     --location=us-central1 \
-    --schedule="0 0 * * *" \
+    --schedule="0 0,12 * * *" \
     --uri="$FUNCTION_URL" \
     --http-method=GET \
     --time-zone="UTC"
@@ -194,6 +194,14 @@ Edit `cloud-function/config.py` and redeploy:
 cd cloud-function
 gcloud functions deploy currency-conversion --gen2 --region=us-central1 --source=.
 ```
+
+### Price Stability Configuration
+The system includes price stability logic to prevent frequent price changes:
+- **Threshold**: 5% (configurable in `config.py` as `PRICE_CHANGE_THRESHOLD`)
+- **Behavior**: Prices only update if change > 5% or if price decreases (beneficial)
+- **.99 Preference**: Prices prefer .99 endings for better presentation (e.g., 110.49 → 110.99)
+
+See [PRICE_STABILITY.md](PRICE_STABILITY.md) for detailed information.
 
 ### View Logs
 ```bash

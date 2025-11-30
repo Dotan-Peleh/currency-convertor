@@ -3,18 +3,20 @@
 ## Update Frequency
 
 ### Current Configuration
-- **Schedule**: Daily at 00:00 UTC (midnight UTC)
+- **Schedule**: Twice daily at 00:00 UTC (midnight) and 12:00 UTC (noon)
 - **Trigger**: Cloud Scheduler (automated)
 - **Manual Trigger**: Available anytime via HTTP call
+- **Price Stability**: Prices only update if change > 5% or beneficial (prevents frequent changes)
 
 ### How to Change Update Frequency
 
 Edit `deployment/scheduler.yaml`:
 ```yaml
-schedule: "0 0 * * *"  # Cron expression
+schedule: "0 0,12 * * *"  # Cron expression (twice daily)
 ```
 
 **Common Schedule Examples:**
+- `"0 0,12 * * *"` - Twice daily at midnight and noon UTC (current)
 - `"0 0 * * *"` - Daily at midnight UTC
 - `"0 */6 * * *"` - Every 6 hours
 - `"0 0 * * 1"` - Every Monday at midnight
@@ -38,7 +40,7 @@ gcloud scheduler jobs update http currency-conversion-daily \
 - **Cost**: $0/month
 
 **Current Usage:**
-- 1 request per day = ~30 requests/month
+- 2 requests per day = ~60 requests/month
 - **Well within free tier limits**
 
 **If you exceed limits:**
@@ -56,10 +58,11 @@ gcloud scheduler jobs update http currency-conversion-daily \
 
 **Current Usage:**
 - 1 read (Config sheet): ~1 request
+- 1 read (Price Matrix for stability check): ~1 request
 - 1 write (Price Matrix): ~1 request (batch write)
 - 1 write (Exchange Rates Log): ~1 request (batch write)
-- **Total per run: ~3 requests**
-- **Daily: 3 requests/day = ~90 requests/month**
+- **Total per run: ~4 requests**
+- **Daily: 8 requests/day (2 runs) = ~240 requests/month**
 
 **Well within free tier limits**
 
@@ -72,7 +75,7 @@ gcloud scheduler jobs update http currency-conversion-daily \
 - **Cost**: $0/month (within free tier)
 
 **Current Usage:**
-- 1 invocation per day = ~30 invocations/month
+- 2 invocations per day = ~60 invocations/month
 - Average execution: ~30-60 seconds
 - Memory: 512MB
 - **Estimated cost: $0/month**
@@ -93,7 +96,7 @@ gcloud scheduler jobs update http currency-conversion-daily \
 
 ```
 1. TRIGGER
-   └─> Cloud Scheduler (00:00 UTC daily)
+   └─> Cloud Scheduler (00:00 UTC and 12:00 UTC daily)
        OR Manual HTTP call
 
 2. CLOUD FUNCTION STARTS
@@ -160,19 +163,26 @@ gcloud scheduler jobs update http currency-conversion-daily \
                
                Returns: Complete price data dictionary
 
-6. WRITE RESULTS TO GOOGLE SHEETS
-   └─> sheets_client.write_price_matrix(price_data)
+6. APPLY PRICE STABILITY
+   └─> price_stability.apply_price_stability(price_data, existing_prices)
+       ├─> Reads existing User_Pays prices from sheet
+       ├─> Compares new prices with existing
+       ├─> Keeps prices stable if change < 5% (unless beneficial decrease)
+       └─> Updates prices if change > 5% or price decreased
+
+7. WRITE RESULTS TO GOOGLE SHEETS
+   └─> sheets_client.write_price_matrix(stable_price_data)
        ├─> Clears existing "Price Matrix" sheet
        ├─> Writes headers + all price data
        └─> One row per country-SKU combination
 
-7. LOG EXCHANGE RATES
+8. LOG EXCHANGE RATES
    └─> sheets_client.log_exchange_rates(rates, date)
-       ├─> Appends to "Exchange Rates Log" sheet
-       └─> Historical tracking (not overwritten)
+       ├─> Overwrites fixed range A1:E1661 with latest rates
+       └─> Historical tracking (latest rates only)
 
-8. RETURN SUCCESS
-   └─> Returns JSON response with count and date
+9. RETURN SUCCESS
+   └─> Returns JSON response with count, date, and stability stats
 ```
 
 ## Data Flow Example
@@ -189,9 +199,10 @@ Input:
 Step 1: Convert USD → USD
   local_price_raw = $79.99 × 1.0 = $79.99
 
-Step 2: Snap to Tier
+Step 2: Snap to Tier (with .99 preference)
   Tiers: [0.99, 1.99, ..., 79.99, ...]
-  local_price = $79.99 (exact match)
+  local_price_raw = $79.99
+  visibility_price = $79.99 (exact match, prefers .99 endings)
 
 Step 3: Calculate Tax
   VAT Rate: 0% (US)
@@ -219,6 +230,7 @@ Output Row:
   Country: US
   Country_Name: United States
   Currency: USD
+  Price_Tier: 79.99
   AppleStoreSku: com.peerplay.mergecruise.credits7999
   GooglePlaySku: com.peerplay.mergecruise.credits7999
   Local_Price: 79.99
@@ -244,9 +256,10 @@ Input:
 Step 1: Convert USD → EUR
   local_price_raw = $79.99 × 0.92 = €73.59
 
-Step 2: Snap to Tier
+Step 2: Snap to Tier (with .99 preference)
   Tiers: [0.99, 1.99, ..., 79.99, ...]
-  local_price = €79.99 (snapped up)
+  local_price_raw = €73.59
+  visibility_price = €73.99 (snapped to .99 ending, within 2-unit limit)
 
 Step 3: Calculate Tax (VAT-inclusive)
   VAT Rate: 19% (Germany)
@@ -273,8 +286,9 @@ Output Row:
   Country: DE
   Country_Name: Germany
   Currency: EUR
-  Local_Price: 79.99
-  User_Pays: 79.99
+  Price_Tier: 79.99
+  Local_Price: 73.59
+  User_Pays: 73.99
   VAT_Rate: 19.0
   VAT_Amount: 12.77
   Gross_USD: 86.95

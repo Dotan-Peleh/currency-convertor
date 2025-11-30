@@ -169,9 +169,13 @@ class SheetsClient:
             # Prepare headers
             headers = [
                 'Country', 'Country_Name', 'Currency', 'Price_Tier', 'AppleStoreSku', 'GooglePlaySku', 
-                'Local_Price', 'User_Pays', 'VAT_Rate', 'VAT_Amount', 
+                'Local_Price', 'User_Pays', 'Stash_Price', 'VAT_Rate', 'VAT_Amount', 
                 'Gross_USD', 'Stash_Fee_USD', 'Net_USD', 'Net_vs_Apple'
             ]
+            
+            # Note: Local_Price = pure conversion (USD * exchange_rate)
+            #       User_Pays = rounded up version (always >= Local_Price)
+            #       Stash_Price = price to send to Stash (pre-tax for US/CA/BR, VAT-inclusive for Europe)
             
             # Prepare data rows
             rows = [headers]
@@ -192,8 +196,9 @@ class SheetsClient:
                     row_data.get('Price_Tier', 0),  # USD base price tier (0.99, 1.99, etc.)
                     row_data.get('AppleStoreSku', ''),
                     row_data.get('GooglePlaySku', ''),
-                    row_data.get('Local_Price', 0),  # Raw conversion: USD * exchange_rate
-                    row_data.get('User_Pays', 0),  # What user will pay (including VAT) - this is the visibility price
+                    row_data.get('Local_Price', 0),  # Raw conversion: USD * exchange_rate (pure conversion)
+                    row_data.get('User_Pays', 0),  # What user will pay (rounded up from Local_Price, including VAT)
+                    row_data.get('Stash_Price', 0),  # Price to send to Stash (pre-tax for US/CA/BR, VAT-inclusive for Europe)
                     row_data.get('VAT_Rate', 0),
                     row_data.get('VAT_Amount', 0),
                     row_data.get('Gross_USD', 0),
@@ -221,8 +226,7 @@ class SheetsClient:
             ).execute()
             
             # Set number formatting for currency columns (USD columns should be currency format)
-            # After adding Price_Tier: Column K (index 10) = Gross_USD, Column L (index 11) = Stash_Fee_USD, Column M (index 12) = Net_USD
-            # Also format Price_Tier (column D, index 3) as currency
+            # After adding Stash_Price: Column D (index 3) = Price_Tier, Column L (index 11) = Gross_USD, Column M (index 12) = Stash_Fee_USD, Column N (index 13) = Net_USD
             # Get the sheet ID first
             try:
                 sheet_metadata = self.sheets.get(
@@ -259,39 +263,17 @@ class SheetsClient:
                         }
                     })
                     
-                    # Format USD columns as currency (columns K, L, M = Gross_USD, Stash_Fee_USD, Net_USD)
-                    # Column indices: K=10, L=11, M=12 (0-based)
+                    # Format USD columns as currency (columns L, M, N = Gross_USD, Stash_Fee_USD, Net_USD)
+                    # Column indices after adding Stash_Price: L=11, M=12, N=13 (0-based)
                     
-                    # Format Gross_USD (column K, index 10) as currency
+                    # Format Gross_USD (column L, index 11) as currency
                     requests.append({
                         'repeatCell': {
                             'range': {
                                 'sheetId': sheet_id,
                                 'startRowIndex': 1,  # Skip header row
                                 'endRowIndex': len(price_data) + 1,
-                                'startColumnIndex': 10,  # Column K (Gross_USD)
-                                'endColumnIndex': 11
-                            },
-                            'cell': {
-                                'userEnteredFormat': {
-                                    'numberFormat': {
-                                        'type': 'CURRENCY',
-                                        'pattern': '"$"#,##0.00'
-                                    }
-                                }
-                            },
-                            'fields': 'userEnteredFormat.numberFormat'
-                        }
-                    })
-                    
-                    # Format Stash_Fee_USD (column L, index 11) as currency
-                    requests.append({
-                        'repeatCell': {
-                            'range': {
-                                'sheetId': sheet_id,
-                                'startRowIndex': 1,
-                                'endRowIndex': len(price_data) + 1,
-                                'startColumnIndex': 11,  # Column L (Stash_Fee_USD)
+                                'startColumnIndex': 11,  # Column L (Gross_USD)
                                 'endColumnIndex': 12
                             },
                             'cell': {
@@ -306,15 +288,37 @@ class SheetsClient:
                         }
                     })
                     
-                    # Format Net_USD (column M, index 12) as currency
+                    # Format Stash_Fee_USD (column M, index 12) as currency
                     requests.append({
                         'repeatCell': {
                             'range': {
                                 'sheetId': sheet_id,
                                 'startRowIndex': 1,
                                 'endRowIndex': len(price_data) + 1,
-                                'startColumnIndex': 12,  # Column M (Net_USD)
+                                'startColumnIndex': 12,  # Column M (Stash_Fee_USD)
                                 'endColumnIndex': 13
+                            },
+                            'cell': {
+                                'userEnteredFormat': {
+                                    'numberFormat': {
+                                        'type': 'CURRENCY',
+                                        'pattern': '"$"#,##0.00'
+                                    }
+                                }
+                            },
+                            'fields': 'userEnteredFormat.numberFormat'
+                        }
+                    })
+                    
+                    # Format Net_USD (column N, index 13) as currency
+                    requests.append({
+                        'repeatCell': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': 1,
+                                'endRowIndex': len(price_data) + 1,
+                                'startColumnIndex': 13,  # Column N (Net_USD)
+                                'endColumnIndex': 14
                             },
                             'cell': {
                                 'userEnteredFormat': {
@@ -334,7 +338,7 @@ class SheetsClient:
                             spreadsheetId=self.sheets_id,
                             body={'requests': requests}
                         ).execute()
-                        logger.info(f"Applied currency formatting to Price_Tier and USD columns (D, K, L, M)")
+                        logger.info(f"Applied currency formatting to Price_Tier and USD columns (D, L, M, N)")
             except Exception as e:
                 logger.warning(f"Could not apply number formatting: {e}. Values are correct but may need manual formatting in Google Sheets.")
             
@@ -409,6 +413,93 @@ class SheetsClient:
         except Exception as e:
             logger.warning(f"Error getting last logged date: {e}")
             return None
+    
+    def read_exchange_rates_from_sheet(self) -> Dict[str, float]:
+        """
+        Read the latest exchange rates from the Exchange Rates Log sheet.
+        Uses the rates from the most recent date in the sheet.
+        
+        Returns:
+            Dictionary mapping currency codes to exchange rates
+        """
+        try:
+            sheet_name = config.GOOGLE_SHEETS_EXCHANGE_RATES_SHEET
+            # Read all data from the sheet
+            range_name = f"{sheet_name}!A:E"
+            
+            result = self.sheets.values().get(
+                spreadsheetId=self.sheets_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if len(values) < 2:  # No data rows
+                logger.warning("No exchange rates found in sheet")
+                return {}
+            
+            # Headers: Date, Currency, Country, Rate, Source
+            # Find the latest date by parsing all dates first
+            from datetime import datetime
+            
+            # First pass: find the latest date
+            latest_date = None
+            all_dates = []
+            
+            for row in values[1:]:  # Skip header
+                if len(row) < 1:
+                    continue
+                try:
+                    date_str = row[0].strip() if len(row) > 0 else ''
+                    if date_str:
+                        # Try to parse date to ensure it's valid
+                        try:
+                            datetime.strptime(date_str, '%Y-%m-%d')
+                            all_dates.append(date_str)
+                        except ValueError:
+                            continue
+                except (IndexError, AttributeError):
+                    continue
+            
+            if not all_dates:
+                logger.warning("No valid dates found in Exchange Rates Log sheet")
+                return {}
+            
+            # Find the latest date (string comparison works for YYYY-MM-DD format)
+            latest_date = max(all_dates)
+            
+            # Second pass: collect rates for the latest date only
+            rates = {}
+            for row in values[1:]:  # Skip header
+                if len(row) < 4:  # Need at least Date, Currency, Rate
+                    continue
+                
+                try:
+                    date_str = row[0].strip() if len(row) > 0 else ''
+                    currency = row[1].strip() if len(row) > 1 else ''
+                    rate_str = row[3].strip() if len(row) > 3 else ''  # Rate is column D (index 3)
+                    
+                    # Only process rows for the latest date
+                    if date_str == latest_date and currency and rate_str:
+                        try:
+                            rate = float(rate_str) if rate_str.replace('.', '').replace('-', '').replace('+', '').isdigit() else None
+                            if rate is not None and rate > 0:
+                                rates[currency.upper()] = rate
+                        except (ValueError, AttributeError):
+                            continue
+                except (IndexError, AttributeError) as e:
+                    logger.debug(f"Error parsing exchange rate row: {e}")
+                    continue
+            
+            if rates:
+                logger.info(f"Read {len(rates)} exchange rates from sheet (date: {latest_date})")
+            else:
+                logger.warning("No valid exchange rates found in sheet")
+            
+            return rates
+            
+        except Exception as e:
+            logger.warning(f"Could not read exchange rates from sheet: {e}")
+            return {}
     
     def log_exchange_rates(self, rates: Dict[str, float], date: str):
         """
