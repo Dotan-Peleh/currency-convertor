@@ -12,6 +12,8 @@ ENV/
 # Google Credentials
 *.json
 !package.json
+!cloud-function/apple_tiers.json
+!cloud-function/apple_pricing_map.json
 service-account-key.json
 credentials.json
 
