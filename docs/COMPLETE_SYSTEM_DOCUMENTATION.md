@@ -164,30 +164,43 @@ local_price_raw = usd_price × exchange_rate
 - Exchange Rate (EUR): 0.92
 - Raw Local Price: $4.99 × 0.92 = €4.59
 
-#### 5b. Snap to Price Tier
+#### 5b. Determine User_Pays Price
 
-**Purpose:** Prices must match standard app store price tiers
+**Purpose:** Calculate what the user will actually pay using Apple's official pricing tiers
 
 **Process:**
-1. Get tier list for currency (e.g., EUR tiers: [0.99, 1.99, 2.99, ...])
-2. Find which two tiers the price falls between
-3. Apply snapping mode:
-   - **"nearest"**: Snap to closer tier
-   - **"up"**: Always snap to higher tier (maximize revenue)
-   - **"down"**: Always snap to lower tier (competitive pricing)
+1. **Calculate Local_Price** (raw conversion):
+   ```
+   Local_Price = USD_Price × Current_Exchange_Rate
+   ```
 
-**Example:**
-- Raw Price: €4.59
-- Tiers: [..., 3.99, 4.99, 5.99, ...]
-- Falls between: 3.99 and 4.99
-- Distance to 3.99: |4.59 - 3.99| = 0.60
-- Distance to 4.99: |4.59 - 4.99| = 0.40
-- **Snapped Price: €4.99** (closer to 4.99)
+2. **Get Apple's Price** (if available):
+   - Check `apple_pricing_map.json` for USD tier → currency price mapping
+   - Example: $1.99 USD → 8.00 ILS (from Apple's CSV)
+
+3. **Determine User_Pays**:
+   - If Apple price >= Local_Price: Use Apple price (matches Apple's stores)
+   - If Apple price < Local_Price: Snap Local_Price to next tier (ensures User_Pays >= Local_Price)
+   - **Critical**: User_Pays is ALWAYS >= Local_Price (never charges less than raw conversion)
+
+**Why This Matters:**
+- Apple's CSV prices are based on historical exchange rates
+- Current exchange rates may be higher, making Apple prices lower
+- We ensure we never charge less than the current exchange rate
+
+**Example (Israel, $1.99 USD tier):**
+- Local_Price: 1.99 × 3.26 = 6.49 ILS (raw conversion)
+- Apple Price: 8.00 ILS (from CSV)
+- User_Pays: 8.00 ILS (Apple price is higher, so use it)
+
+**Example (Japan, $9.99 USD tier):**
+- Local_Price: 9.99 × 156.17 = 1,560.14 JPY (raw conversion)
+- Apple Price: 1,310 JPY (from CSV, but lower than Local_Price)
+- User_Pays: 1,570 JPY (snapped to next tier, ensures >= Local_Price)
 
 **Tier Definitions:**
-- **USD/EUR**: [0.99, 1.99, 2.99, 3.99, 4.99, 5.99, 6.99, 7.99, 9.99, 10.99, 12.99, 14.99, 19.99, 24.99, 29.99, 39.99, 49.99, 54.99, 59.99, 64.99, 69.99, 74.99, 79.99, 84.99, 89.99, 94.99, 99.99, 199.99]
-- **GBP**: [0.79, 1.49, 1.99, 2.99, 3.99, 4.99, 5.99, 7.99, 9.99, ...]
-- **JPY**: [120, 160, 250, 370, 490, 610, 730, 860, 980, 1100, ...]
+- Uses Apple's official pricing tiers from `apple_tiers.json` (44 currencies, 600-800 tiers each)
+- Falls back to tier snapping for currencies not in Apple's CSV
 
 #### 5c. Calculate VAT/GST
 
