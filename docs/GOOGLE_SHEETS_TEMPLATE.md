@@ -49,22 +49,25 @@ com.peerplay.mergecruise.credits200000	com.peerplay.mergecruise.credits200000	19
 - `Price_Tier` (Column D) - Original USD base price tier (e.g., 0.99, 1.99, 4.99)
 - `AppleStoreSku` (Column E) - Apple App Store SKU
 - `GooglePlaySku` (Column F) - Google Play Store SKU
-- `Local_Price` (Column G) - Raw conversion price in local currency (USD × exchange_rate)
-- `User_Pays` (Column H) - Final price user will pay (with .99 preference, includes VAT if applicable)
-- `VAT_Rate` (Column I) - VAT/GST rate as percentage (e.g., "19.0" for 19%)
+- `Local_Price` (Column G) - Raw conversion price in local currency (USD × current exchange_rate)
+- `User_Pays` (Column H) - Final price user will pay (Apple's price from CSV, or snapped tier if Apple price < Local_Price)
+- `Stash_Price` (Column I) - Price to send to Stash (pre-tax for US/CA/BR, VAT-inclusive for Europe)
+- `VAT_Rate` (Column J) - VAT/GST rate as percentage (e.g., "19.0" for 19%)
 - `VAT_Amount` (Column J) - VAT/GST amount in local currency
-- `Gross_USD` (Column K) - Gross revenue in USD (formatted as currency)
-- `Stash_Fee_USD` (Column L) - Stash processing fee in USD (0% for first year, formatted as currency)
-- `Net_USD` (Column M) - Net revenue in USD after taxes and fees (formatted as currency)
-- `Net_vs_Apple` (Column N) - Percentage difference vs Apple's net revenue (e.g., "+15.2%")
+- `Gross_USD` (Column L) - Gross revenue in USD (formatted as currency)
+- `Stash_Fee_USD` (Column M) - Stash processing fee in USD (0% for first year, formatted as currency)
+- `Net_USD` (Column N) - Net revenue in USD after taxes and fees (formatted as currency)
+- `Net_vs_Apple` (Column O) - Percentage difference vs Apple's net revenue (e.g., "+15.2%")
 
 **Notes**:
 - This sheet is completely overwritten on each run
 - Data is sorted by Country, then by SKU Cost
 - One row per country-SKU combination
 - **Price Stability**: Prices only update if change > 5% or beneficial (prevents frequent changes)
-- **.99 Preference**: User_Pays prices prefer .99 endings (e.g., 110.49 → 110.99) for better presentation
+- **Apple Pricing**: Uses Apple's official pricing tiers from their CSV (ensures prices match Apple's stores)
+- **User_Pays >= Local_Price**: Always ensures User_Pays is never lower than raw conversion
 - **Price_Tier**: Shows the original USD base price for reference
+- **Stash_Price**: Calculated based on Stash's regional tax rules (see STASH_PRICE_VERIFICATION.md)
 
 ## Sheet 3: Exchange Rates Log
 

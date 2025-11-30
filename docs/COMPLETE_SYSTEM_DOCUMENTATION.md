@@ -304,27 +304,43 @@ net_vs_apple = ((net_usd - apple_net) / apple_net) × 100
 - "DE" → "Germany"
 - etc.
 
-#### 5h. Calculate User Pays
+#### 5h. Calculate User Pays and Stash Price
 
-**Purpose:** Final price the customer will see/pay
+**Purpose:** Final price the customer will see/pay, and price to send to Stash
 
-**Formula:**
+**User_Pays Formula:**
 ```
 If VAT-inclusive:
-  user_pays = local_price  (VAT already included)
+  user_pays = visibility_price  (VAT already included in Apple price or tier)
 
 If VAT-exclusive:
-  user_pays = local_price + vat_amount  (price + tax)
+  user_pays = visibility_price + vat_amount  (price + tax)
+```
+
+**Stash_Price Formula:**
+```
+If country in STASH_PRE_TAX_COUNTRIES (US, CA, BR):
+  If BR: stash_price = user_pays / (1 + vat_rate)  # Remove VAT
+  Else: stash_price = user_pays  # Already pre-tax
+
+If country in STASH_VAT_INCLUSIVE_COUNTRIES (Europe):
+  stash_price = user_pays  # Send VAT-inclusive price
 ```
 
 **Example (Germany - VAT-inclusive):**
-- Local Price: €4.99
-- User Pays: €4.99 (VAT included)
+- Local_Price: €1.83 (raw: $1.99 × 0.92)
+- User_Pays: €1.99 (Apple price, includes 19% VAT)
+- Stash_Price: €1.99 (VAT-inclusive for Europe)
 
 **Example (US - VAT-exclusive):**
-- Local Price: $4.99
-- VAT: $0.00
-- User Pays: $4.99
+- Local_Price: $1.99 (raw: $1.99 × 1.0)
+- User_Pays: $1.99 (Apple price, no VAT)
+- Stash_Price: $1.99 (pre-tax for US)
+
+**Example (Brazil - VAT-inclusive, pre-tax for Stash):**
+- Local_Price: 10.65 BRL (raw: $1.99 × 5.35)
+- User_Pays: 6.00 BRL (Apple price, includes 17% VAT)
+- Stash_Price: 5.13 BRL (pre-tax: 6.00 / 1.17)
 
 ### Step 6: Write Results to Google Sheets
 
@@ -340,16 +356,18 @@ If VAT-exclusive:
 1. Country (code)
 2. Country_Name (full name)
 3. Currency
-4. AppleStoreSku
-5. GooglePlaySku
-6. Local_Price
-7. User_Pays
-8. VAT_Rate
-9. VAT_Amount
-10. Gross_USD
-11. Stash_Fee_USD
-12. Net_USD
-13. Net_vs_Apple
+4. Price_Tier (USD base price: 0.99, 1.99, etc.)
+5. AppleStoreSku
+6. GooglePlaySku
+7. Local_Price (raw conversion: USD × exchange_rate)
+8. User_Pays (Apple price or snapped tier, always >= Local_Price)
+9. Stash_Price (price to send to Stash, based on regional tax rules)
+10. VAT_Rate
+11. VAT_Amount
+12. Gross_USD
+13. Stash_Fee_USD
+14. Net_USD
+15. Net_vs_Apple
 
 ### Step 7: Log Exchange Rates
 
@@ -528,8 +546,13 @@ STASH_FIXED_FEE = 0.0    # No fixed fee
 
 **Tier Snapping:**
 ```python
-TIER_SNAPPING_MODE = "nearest"  # Options: "nearest", "up", "down"
+TIER_SNAPPING_MODE = "up"  # Options: "nearest", "up", "down"
 ```
+
+**Apple Pricing Files:**
+- `apple_tiers.json` - Apple's official pricing tiers (44 currencies, 600-800 tiers each)
+- `apple_pricing_map.json` - USD tier → currency price mappings (657 USD tiers × 44 currencies)
+- These files are generated from Apple's pricing matrix CSV
 
 **Exchange Rate API:**
 ```python
@@ -574,8 +597,9 @@ SKU_PATTERN = r"com\.peerplay\.mergecruise\.credit"
 | **Currency** | Currency code | `USD`, `EUR`, `GBP` | 3-letter code |
 | **AppleStoreSku** | Apple SKU identifier | `com.peerplay.mergecruise.credits199` | From Config |
 | **GooglePlaySku** | Google Play SKU | `com.peerplay.mergecruise.credits199` | From Config |
-| **Local_Price** | Price in local currency (after tier snapping) | `4.99` | Before VAT (if applicable) |
-| **User_Pays** | Final price user will pay | `4.99` | Includes VAT if applicable |
+| **Local_Price** | Raw conversion price (USD × exchange_rate) | `6.49` | Pure mathematical conversion |
+| **User_Pays** | Final price user will pay (Apple price or snapped tier) | `8.00` | Always >= Local_Price, includes VAT if applicable |
+| **Stash_Price** | Price to send to Stash payment processor | `8.00` | Pre-tax for US/CA/BR, VAT-inclusive for Europe |
 | **VAT_Rate** | VAT/GST rate as percentage | `19.0` | 0% for no-tax countries |
 | **VAT_Amount** | VAT/GST amount in local currency | `0.80` | Tax portion of price |
 | **Gross_USD** | Gross revenue in USD | `5.42` | Before any deductions |

@@ -16,8 +16,9 @@ This system automatically:
 ## Features
 
 - **Multi-currency support**: Handles 50+ countries and currencies
+- **Apple pricing tiers**: Uses Apple's official pricing tiers from their CSV (44 currencies, 600-800 tiers each)
 - **Tax calculation**: VAT-inclusive/exclusive logic for different countries
-- **Tier snapping**: Country-specific price tier definitions with .99 ending preference
+- **Stash integration**: Calculates Stash_Price based on regional tax rules (pre-tax for US/CA/BR, VAT-inclusive for Europe)
 - **Price stability**: Prevents frequent price changes (< 5% threshold)
 - **Apple comparison**: Shows revenue advantage vs Apple's 30% fee
 - **Automated**: Runs twice daily at 12:00 and 24:00 UTC
@@ -84,17 +85,29 @@ STASH_FEE_PERCENT = 0.0  # Change this when fees apply
 STASH_FIXED_FEE = 0.0
 ```
 
-### Tier Snapping
+### Pricing Logic
 
-Configurable in `cloud-function/config.py`:
-```python
-TIER_SNAPPING_MODE = "up"  # Options: "nearest", "up", "down"
-```
+The system uses **Apple's official pricing tiers** from their pricing matrix CSV:
 
-The system now prioritizes .99 endings for better price presentation:
-- Example: 110.49 → 110.99 (within 2-unit limit)
-- Example: 4.52 → 4.99
-- Prices always increase slightly to look better to customers
+1. **Local_Price**: Raw conversion (USD × current exchange rate)
+   - Example: $1.99 USD × 3.26 ILS/USD = 6.49 ILS
+
+2. **User_Pays**: What the user actually pays
+   - Uses Apple's exact price from CSV when available (e.g., 8.00 ILS for $1.99 USD)
+   - If Apple price < Local_Price, snaps Local_Price to next tier (ensures User_Pays >= Local_Price)
+   - Always >= Local_Price (never charges less than raw conversion)
+
+3. **Stash_Price**: Price sent to Stash payment processor
+   - US/Canada/Brazil: Pre-tax price (Stash adds tax on top)
+   - Europe: VAT-inclusive price (same as User_Pays)
+
+**Tier Snapping:**
+- Uses Apple's official pricing tiers (44 currencies, 600-800 tiers each)
+- Falls back to tier snapping for currencies not in Apple's CSV
+- Configurable in `cloud-function/config.py`:
+  ```python
+  TIER_SNAPPING_MODE = "up"  # Options: "nearest", "up", "down"
+  ```
 
 ### Price Stability
 
@@ -114,7 +127,7 @@ The system prevents frequent price changes to maintain customer trust:
 - `Cost` - USD base price
 
 ### Sheet 2: Price Matrix (Auto-generated)
-- Country, Country_Name, Currency, Price_Tier, SKUs, Local_Price, User_Pays, VAT, Fees, Net Revenue, vs Apple comparison
+- Country, Country_Name, Currency, Price_Tier, SKUs, Local_Price, User_Pays, Stash_Price, VAT, Fees, Net Revenue, vs Apple comparison
 
 ### Sheet 3: Exchange Rates Log (Auto-generated)
 - Historical exchange rate tracking
